@@ -404,21 +404,21 @@
       :nodes
         {
           y|z
-           [[1 0]
-            [0 1]]
+           [[0.9 0.1]
+            [0.1 0.9]]
           x|z
-           [[1 0]
-            [0 1]]
+           [[0.9 0.1]
+            [0.1 0.9]]
            x| [0 1]
-           z| [1 0]
+           z| [1/2 1/2]
          }}
-    (graph->fg :sp/sp)
+    (graph->fg :sp/mxp)
     ;:graph
-    ;lio/view
+    ;((fn [g] (lio/view g {:alg :neato :node-label name })))
     propagate
-    marginals
-    normalize-vals
-    ;MAP-config
+    ;marginals
+    ;normalize-vals
+    MAP-config
     )
 
 
