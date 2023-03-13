@@ -4,7 +4,8 @@
  {
    org.clojure/clojure      {:mvn/version "1.10.1-beta2"}
    aysylu/loom              {:mvn/version "1.0.1"}
-   net.mikera/core.matrix   {:mvn/version "0.62.0"}
+   net.mikera/core.matrix   {:mvn/version "0.63.0"}
+   net.mikera/vectorz-clj {:mvn/version "0.48.0" :provided true}
  }
  :aliases
   {

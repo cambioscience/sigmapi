@@ -50,7 +50,8 @@
     [loom.alg :as la]
     [clojure.walk :as walk])
     #?(:cljs (:require-macros
-      [sigmapi.core :refer [fgtree]])))
+              [sigmapi.core :refer [fgtree]])
+       :clj (:import [mikera.vectorz Vector])))
 
 #?(:clj
   (defmacro fgtree [xp]
@@ -206,6 +207,12 @@
            (let [
                  d (get pnd (dim-for-node id))
                  [tm rv nd] (tranz r dimz d last)
+                 tm #?(:clj
+                       (cond-> tm (not (instance? Vector tm)) m/matrix)
+                       :cljs tm)
+                 v #?(:clj
+                       (cond-> v (not (instance? Vector v)) m/matrix)
+                       :cljs v)
                  q (g tm v)]
              [q rv (vec (map pnd nd))]))
          [mat dimz dimz] messages)
