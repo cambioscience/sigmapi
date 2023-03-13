@@ -210,9 +210,6 @@
                  tm #?(:clj
                        (cond-> tm (not (instance? Vector tm)) m/matrix)
                        :cljs tm)
-                 v #?(:clj
-                       (cond-> v (not (instance? Vector v)) m/matrix)
-                       :cljs v)
                  q (g tm v)]
              [q rv (mapv pnd nd)]))
          [mat dimz dimz] messages)
