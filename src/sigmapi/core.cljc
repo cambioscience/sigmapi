@@ -214,7 +214,7 @@
                        (cond-> v (not (instance? Vector v)) m/matrix)
                        :cljs v)
                  q (g tm v)]
-             [q rv (vec (map pnd nd))]))
+             [q rv (mapv pnd nd)]))
          [mat dimz dimz] messages)
        d (get ddd (dim-for-node to))
        [tm rv nd] (tranz p dimz d first)
