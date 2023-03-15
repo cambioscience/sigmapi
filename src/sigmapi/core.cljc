@@ -199,7 +199,7 @@
            (let [
                  d (get pnd (dim-for-node id))
                  [tm rv nd] (tranz r dimz d last)
-                 q (g tm v)]
+                 q (g #?(:clj (m/matrix tm) :cljs tm) v)]
              [q rv (vec (map pnd nd))]))
          [mat dimz dimz] messages)
        d (get ddd (dim-for-node to))
@@ -366,6 +366,7 @@ max-sum algorithm with the given id")
   (filter
     (partial leaf? g)
     (lg/nodes g)))
+
 
 (defn edges->fg
   "
@@ -673,20 +674,7 @@ max-sum algorithm with the given id")
   "Propagate messages on the given model's graph
   in both directions"
   ([n m]
-    (propagate-cycles message-passing n (assoc m :messages {})))
-  ([f n m]
-   (->>
-     [m (msgs-from-leaves m)]
-     (iterate (fn [[o n]] [n (f o n)]))
-     (take n)
-     last
-     last)))
-
-(defn propagation-cycles
-  "Propagate messages on the given model's graph
-  in both directions"
-  ([n m]
-    (propagation-cycles
+    (propagate-cycles
       (comp messages-<> messages-><)
       n (assoc m :messages {})))
   ([f n m]
@@ -704,7 +692,7 @@ max-sum algorithm with the given id")
       (juxt key
         (comp (fn [v] (if (== 1 (m/dimensionality v)) (normalize v) (vec (map normalize v)))) val)) m)))
 
-(defn marginals
+(defn unnormalized-marginals
   "Returns a map of marginals for the nodes of the given model"
   [{:keys [messages graph nodes] :as model}]
   (into {}
@@ -712,6 +700,14 @@ max-sum algorithm with the given id")
       (fn [[id node]]
         [id (vec (m/emap P (maybe-list (:value (<> node (vals (get messages id)) nil nil nil)))))])
       (filter (comp (fn [n] (satisfies? Variable n)) val) nodes))))
+
+(def marginals
+  (comp normalize-vals unnormalized-marginals))
+
+(defn named-marginals [model marginals]
+  (zipmap
+    (map (:aliases model) (keys marginals))
+    (map (comp (partial apply hash-map) interleave) (map (:states model) (keys marginals)) (vals marginals))))
 
 (defn all-marginals
   "Marginals for all given models"
@@ -723,7 +719,7 @@ max-sum algorithm with the given id")
              (filter
                (comp (fn [n] (satisfies? Variable n)) val)
                (:nodes (first models))))
-        (repeat [])) (map marginals models)))
+        (repeat [])) (map unnormalized-marginals models)))
 
 (defn configuration
   "Returns the total configuration of max-sum for the given model"
@@ -747,7 +743,7 @@ max-sum algorithm with the given id")
 
 (defn compute-marginals [exp]
   (normalize-vals
-    (marginals (propagate (exp->fg :sp/sp exp)))))
+    (unnormalized-marginals (propagate (exp->fg :sp/sp exp)))))
 
 (defn compute-MAP-config [exp]
   (MAP-config
@@ -773,7 +769,7 @@ max-sum algorithm with the given id")
               p1 (merge (zipmap (vals priors) (map p2 (keys priors))) data-priors)
               g  (update-factors g p1)
             ]
-        [g (normalize-vals (marginals (propagate g)))]))
+        [g (normalize-vals (unnormalized-marginals (propagate g)))]))
     [graph (or post (zipmap (keys priors) (map (comp (partial mapv P) :value i (:nodes graph)) (vals priors))))] data))
 
 (defn updated-variables [{:keys [fg updated marginals priors data] :as model}]
@@ -796,4 +792,4 @@ max-sum algorithm with the given id")
             ]
         (-> model
           (assoc :updated g)
-          (assoc :marginals (normalize-vals (sigmapi.core/marginals (propagate g)))))))
+          (assoc :marginals (normalize-vals (sigmapi.core/unnormalized-marginals (propagate g)))))))

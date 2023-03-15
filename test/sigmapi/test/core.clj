@@ -1,10 +1,7 @@
 (ns sigmapi.test.core
   (:require
     [clojure.test :refer [deftest testing is]]
-    [sigmapi.core :as sp :refer [fgtree make-node propagate propagate-cycles propagation-cycles print-msgs msg-diff
-        marginals exp->fg msgs-from-leaves message-passing ln- P as-edges edges->fg
-        normalize random-matrix MAP-config combine can-message? normalize-vals graph->fg
-        update-factors]]
+    [sigmapi.core :as sp :refer :all]
     [clojure.core.matrix :as m]
     [loom.graph :as lg]
     [loom.alg :as la]
@@ -252,18 +249,7 @@
       m2
       (-> l (assoc :alg :sp/mxp) sp/change-alg propagate MAP-config)
       ]
-     (println "  " (select-keys m1 [:door :prize-0 :prize-1 :your-1st-choice :host's-choice :your-2nd-choice]))
-     (println "  " m2)
-     (println)
-     (println "--------")
-     (println)
-     (println (apply str " car is      " (assoc '[🚪 🚪 🚪] (:door m2) '🚗)))
-     (println (apply str " you chose   " (assoc '[🚪 🚪 🚪] (:your-1st-choice m2) '🀆)))
-     (println (apply str " host opened " (assoc '[🚪 🚪 🚪] (:host's-choice m2) '🐐)))
-     (println (apply str " you chose   " (assoc '[🚪 🚪 🚪] (:your-2nd-choice m2) '🀆 (:host's-choice m2) '🐐)))
-     (println (apply str "             " (assoc '[🐐 🐐 🐐] (:your-2nd-choice m2) '🀆 (:door m2) '🚗)))
-     (println)
-     (println (if (== 1 (:prize-1 m2)) "you won!" "you lost"))
+
      {:result (if (== 1 (:prize-1 m2)) '🚗 '🐐)
       :model l}
      )))
@@ -377,14 +363,14 @@
         [w|s&r {:id :w}]
 
         ])
-      (propagation-cycles 8)
+      (propagate-cycles 8)
 
       ;last
       ;doall
       ;:end
       ;(map (comp println print-msgs))
       ;doall
-      (map (comp normalize-vals marginals))
+      (map (comp normalize-vals unnormalized-marginals))
       ;last
       ;marginals
       ;normalize-vals
@@ -396,30 +382,328 @@
       [
        z    y|z
        y|z  y
+
        z    x|z
        x|z  x
+
        x|   x
        z|   z
        ]
       :nodes
         {
           y|z
-           [[0.9 0.1]
-            [0.1 0.9]]
+           [[0.8 0.1]
+            [0.1 0.8]]
           x|z
-           [[0.9 0.1]
-            [0.1 0.9]]
+           [[1/2 1/2]
+            [1/2 1/2]
+            ]
            x| [0 1]
-           z| [1/2 1/2]
+           z| [1 0]
          }}
-    (graph->fg :sp/mxp)
+    (graph->fg :sp/sp)
     ;:graph
     ;((fn [g] (lio/view g {:alg :neato :node-label name })))
     propagate
-    ;marginals
-    ;normalize-vals
-    MAP-config
+    unnormalized-marginals
+    normalize-vals
+    ;MAP-config
     )
+
+
+  (->>
+    '{:edges
+      [
+       z    y|x&z
+       x    y|x&z
+
+       y|x&z  y
+
+       z    x|z
+       x|z  x
+
+
+       x|   x
+       z|   z
+       ;y|   y
+       ]
+      :nodes
+        {
+          y|x&z
+           [
+             [[0.07 0.93] [0.13 0.87]]
+             [[0.27 0.73] [0.31 0.69]]
+           ]
+          x|z
+           [
+            [0.3 0.7]
+            [0.8 0.2]
+            ]
+          x| [0 1]                                                          ; drug
+          z| [0.5 0.5]                                                             ; gender
+         ;y| [1 0]                                                                 ; recovery
+         }}
+    (graph->fg :sp/sp)
+    ;:graph
+    ;((fn [g] (lio/view g {:alg :neato :node-label name })))
+    (propagate-cycles 9)
+    last
+    marginals
+    named-marginals
+    )
+
+  (let [model
+        '{:edges
+          [
+           z    y|x&z
+           x    y|x&z
+           y|x&z  y
+
+           x|   x
+           z|   z
+           ]
+          :nodes
+            {
+              y|x&z
+               [
+                 [[0.07 0.93] [0.13 0.87]]
+                 [[0.27 0.73] [0.31 0.69]]
+               ]
+              x| [0 1]
+              z| [0.5 0.5]
+             ;y| [1 0]
+             }
+          :states {:x [:drug :no-drug] :y [:didn't-recover :recovered] :z [:male :female]}
+          :aliases {:x :drug :y :recovery :z :gender}}]
+      (->> model
+       (graph->fg :sp/sp)
+       ;:graph
+       ;((fn [g] (lio/view g {:alg :neato :node-label name })))
+       (propagate-cycles 2)
+       last
+       marginals
+       (named-marginals model)
+       ))
+
+
+  (defn intervene [model variable amount]
+    (let [v (get-in model [:nodes variable])
+          s (m/shape v)
+          d (last s)
+          p (/ 1 d)]
+      (assoc-in model [:nodes variable]
+        (m/emap (fn [x] (+ (* amount p) (* (- 1 amount) p x))) v))))
+
+  (let [model
+          '{:edges
+            [
+             z    y|z&x
+             x    y|z&x
+             y|z&x  y
+
+             z    x|z
+             x|z  x
+
+             x|   x ;
+             z|   z ;
+             ;y|   y
+             ]
+            :nodes
+              {
+                y|z&x
+                 [
+                   [[0.07 0.93] [0.13 0.87]] ; asda
+                   [[0.27 0.73] [0.31 0.69]]                                    ;as
+                 ]
+                x|z
+                 [
+                   [0.3 0.7]
+                   [0.8 0.2]
+                 ]
+                x| [1 0]
+                z| [0.5 0.5]
+               ;y| [1 0]
+
+               }
+            :states {:x [:drug :no-drug] :y [:didn't-recover :recovered] :z [:male :female]}
+            :aliases {:x :drug :y :recovery :z :gender}}
+        intervened-model
+          (assoc-in model [:nodes 'x|z]
+            [
+              [0.5 0.5]
+              [0.5 0.5]
+            ])
+        ;im (intervene model 'x|z 0.5)
+        ]
+    (->> model
+     (graph->fg :sp/sp)
+     ;:graph
+     ;((fn [g] (lio/view g {:alg :neato :node-label name })))
+     (propagate-cycles 8)
+     last
+     marginals
+     (named-marginals model)
+    ))
+
+
+(let [model
+          '{:edges
+            [
+             z    y|z&x
+             x    y|z&x
+             y|z&x  y
+
+             z    x|z
+             x|z  x
+
+             x|   x ;
+             z|   z ;
+             ;y|   y
+             ]
+            :nodes
+              {
+                y|z&x
+                 [
+                   [[0.07 0.93] [0.13 0.87]]
+                   [[0.27 0.73] [0.31 0.69]]
+                 ]
+                x|z
+                 [
+                   [0.3 0.7]
+                   [0.8 0.2]
+                 ]
+                x| [1 0]
+                z| [0.5 0.5]
+               ;y| [1 0]
+               }
+            :states  {:x [:a :b] :y [:thin :fat] :z [:thin :fat]}
+            :aliases {:x :diet :y :final-weight :z :initial-weight}}
+        intervened-model
+          (assoc-in model [:nodes 'x|z]
+            [
+              [0.5 0.5]
+              [0.5 0.5]
+            ])
+        ]
+    (->> model
+     (graph->fg :sp/sp)
+     ;:graph
+     ;((fn [g] (lio/view g {:alg :neato :node-label name })))
+     (propagate-cycles 8)
+     last
+     marginals
+     (named-marginals model)
+    ))
+
+(cc/quick-bench (MHP))
+
+ (m/set-current-implementation :vectorz)
+
+  (let [mat (m/matrix (m/reshape (range 27) [3 3 3]))]
+    (type (first (tranz mat 2 first))))
+
+  (require '[criterium.core :as cc])
+
+  (let [mat (-> (m/reshape (range 27) [3 3 3]) m/matrix)]
+    (cc/quick-bench (-> mat (m/transpose [2 1 0]) )))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  "
+
+  Definition 3.3.1 (The Backdoor Criterion)
+
+  Given an ordered pair of variables (X,Y) in a directed acyclic graph G,
+  a set of variables Z satisfies the backdoor criterion relative to (X, Y)
+  if no node in Z is a descendant of X,
+  and Z blocks every path between X and Y that contains an arrow into X.
+
+  and nodes in Z are observed
+
+
+
+  condition on paths
+
+
+
+  "
+
+
+  "
+  blocked by set Z:
+
+  unconditional: colliders
+
+  conditional (conditioned nodes Z):
+    * unconditioned colliders not in Z and having no descendants in Z
+    * chain or fork whose middle node is in Z
+
+  blocking is conditioning
+
+  "
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
