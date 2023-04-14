@@ -44,14 +44,14 @@
 
   "
   (:require
-    [clojure.math :refer [log pow]]
-    [clojure.set :as set]
     [clojure.core.matrix :as m]
+    [clojure.set :as set]
+    [clojure.math :as maths :refer [log pow]]
+    [clojure.walk :as walk]
     [loom.graph :as lg]
-    [loom.alg :as la]
-    [clojure.walk :as walk])
+    [loom.alg :as la])
     #?(:cljs (:require-macros
-      [sigmapi.core :refer [fgtree]])))
+              [sigmapi.core :refer [fgtree]])))
 
 #?(:clj
   (defmacro fgtree [xp]
@@ -76,7 +76,7 @@
   ([p s]
    (if (zero? s)
     p
-    (vec (map (partial * (/ 1 s)) p)))))
+     (mapv (partial * (/ 1 s)) p))))
 
 (defn random-matrix
   "Returns a random matrix of the given shape e.g.  [2 3 4 5]"
@@ -140,7 +140,7 @@
   [f]
   (fn ibf [mat]
     (let [best (f mat)]
-      [best (first (filter #(= best (apply m/mget mat %))
+      [best (first (filter (fn [v] (== best (apply m/mget mat v)))
             (m/index-seq mat)))])))
 
 (def indexed-min (indexed-best m/emin))
@@ -199,8 +199,10 @@
            (let [
                  d (get pnd (dim-for-node id))
                  [tm rv nd] (tranz r dimz d last)
-                 q (g #?(:clj (m/matrix tm) :cljs tm) v)]
-             [q rv (vec (map pnd nd))]))
+                 tm #?(:clj (if (vector? tm) (m/matrix tm) tm)
+                       :cljs tm)
+                 q (g tm v)]
+             [q rv (mapv pnd nd)]))
          [mat dimz dimz] messages)
        d (get ddd (dim-for-node to))
        [tm rv nd] (tranz p dimz d first)
@@ -246,11 +248,11 @@
           ]
       {
        :dim-for-node dim-for-node
-       :value        mm
-       :min          (indexed-min mm)
-       :sum          rsum
-       :im           (vec (map (fn [[s c]] [s (zipmap (keys (dissoc dim-for-node to)) c)]) (map indexed-min rsum)))
-       :repr         (list 'min (cons '∑ (cons (:repr (i this)) (map :repr messages))))
+       :value mm
+       :min (indexed-min mm)
+       :sum rsum
+       :im (mapv (fn [[s c]] [s (zipmap (keys (dissoc dim-for-node to)) c)]) (map indexed-min rsum))
+       :repr (list 'min (cons '∑ (cons (:repr (i this)) (map :repr messages))))
        }))
   (<> [this messages to to-msg parent-msg]
     (let [
@@ -383,6 +385,7 @@ max-sum algorithm with the given id")
          :alg        alg
          :messages   {}
          :graph      g
+         :digraph    (apply lg/digraph (map (partial map :id) edges))
          :spanning-tree t
          :leaves     (leaves t)
          :neighbours neighbours
@@ -404,17 +407,7 @@ max-sum algorithm with the given id")
                           (map (fn [[id matrix]] [id {:id (keyword (str id)) :matrix matrix}]) nodes)))
         edges'  (partition 2 (map nodes' edges))
         ]
-    (edges->fg alg edges')))
-
-(defn matrices-as-vectors [fg]
-  (reduce
-    (fn [r [id mat]]
-      (assoc r id
-        {
-          :shape  (m/shape mat)
-          :vector (m/as-vector mat)
-        }))
-    {} (filter (partial satisfies? Factor) (:nodes fg))))
+    (merge (edges->fg alg edges') (select-keys graph [:states :aliases]))))
 
 (defn update-factors
   "Replace nodes for the given matrices with new ones"
@@ -598,7 +591,7 @@ max-sum algorithm with the given id")
      model messages))
 
 (defn messages-><
-  "  "
+  "Propagate inflowing messages"
   [{:keys [messages graph nodes] :as model}]
   (reduce
     (fn [r [id msgs]]
@@ -612,7 +605,7 @@ max-sum algorithm with the given id")
      model messages))
 
 (defn messages-<>
-  "  "
+  "Propagate outflowing messages"
   [{:keys [messages graph nodes] :as model}]
   (reduce
     (fn [r [id msgs]]
@@ -633,30 +626,6 @@ max-sum algorithm with the given id")
   (or (empty? messages)
       (not= (into #{} (keys messages))
             (into #{} (mapcat keys (vals messages))))))
-
-(defn print-msgs [{:keys [messages graph nodes] :as model}]
-  (doseq [[to from msg] (mapcat (fn [[to msgs]] (map (partial cons to) msgs)) messages)]
-    (println from "⟶" to (:flow msg) (:repr msg)
-             "sum: " (m/shape (:sum msg))
-             "dfn: " (:dim-for-node msg)
-             "conf" (:configuration msg)
-             "mind" (:mind msg)
-             "min: " (:min msg))
-    (println "    " "val: " (:value msg) (m/shape (:im msg)) "im: " (:im msg))
-    (println "    " "min" (:min msg) "conf" (:configuration msg))))
-
-(defn msgs [{:keys [messages graph nodes] :as model}]
-  (map
-    (fn ([[to from msg]] {:from from :to to :repr (:repr msg)}))
-    (mapcat (fn [[to msgs]] (map (partial cons to) msgs)) messages)))
-
-(defn msg-diff [om nm]
-  (reduce
-    (fn [r [to msgs]]
-      (assoc-in r [:messages to]
-                (let [diff (set/difference (into #{} (vals msgs)) (into #{} (vals (get-in om [:messages to]))))]
-                  (zipmap (map :id diff) diff))))
-    nm (:messages nm)))
 
 (defn propagate
   "Propagate messages on the given model's graph
@@ -690,7 +659,7 @@ max-sum algorithm with the given id")
   (into {}
     (map
       (juxt key
-        (comp (fn [v] (if (== 1 (m/dimensionality v)) (normalize v) (vec (map normalize v)))) val)) m)))
+        (comp (fn [v] (if (== 1 (m/dimensionality v)) (normalize v) (mapv normalize v))) val)) m)))
 
 (defn unnormalized-marginals
   "Returns a map of marginals for the nodes of the given model"

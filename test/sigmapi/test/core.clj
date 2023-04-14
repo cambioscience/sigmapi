@@ -542,7 +542,7 @@
      (propagate-cycles 8)
      last
      marginals
-     (named-marginals model)
+      (named-marginals model)
     ))
 
 
