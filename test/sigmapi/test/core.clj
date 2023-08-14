@@ -3,6 +3,7 @@
     [clojure.test :refer [deftest testing is]]
     [sigmapi.core :as sp :refer :all]
     [clojure.core.matrix :as m]
+    [com.hypirion.clj-xchart :as ch]
     [loom.graph :as lg]
     [loom.alg :as la]
     [loom.io :as lio]))
@@ -512,8 +513,8 @@
               {
                 y|z&x
                  [
-                   [[0.07 0.93] [0.13 0.87]] ; asda
-                   [[0.27 0.73] [0.31 0.69]]                                    ;as
+                   [[0.07 0.93] [0.13 0.87]]
+                   [[0.27 0.73] [0.31 0.69]]
                  ]
                 x|z
                  [
@@ -535,13 +536,70 @@
             ])
         ;im (intervene model 'x|z 0.5)
         ]
-    (->> model
+    (->> intervened-model
      (graph->fg :sp/sp)
      ;:graph
      ;((fn [g] (lio/view g {:alg :neato :node-label name })))
      (propagate-cycles 8)
      last
      marginals
+      (named-marginals model)
+    ))
+
+(let [model
+        '{:edges
+          [
+           ;g s|g
+            s|g s
+            s t|s
+            t|s t
+            t c|g&t
+            g c|g&t
+            c|g&t c
+            g| g
+            s| s
+            t| t
+            c| c
+          ]
+          :nodes
+          {
+           c|g&t
+           [
+            [[0.5 0.5] [0.45 0.55]]
+            [[0.2 0.8] [0.2 0.8]]
+            ]
+           s|g
+           [
+            [0.5 0.5]
+            [0.2 0.8]
+            ]
+           t|s
+           [
+            [0.5 0.5]
+            [0.5 0.5]
+            ]
+           s| [0 1]
+           t| [0.5 0.5]
+           g| [0.5 0.5]
+           c| [0.5 0.5]
+           }
+          :states {:s [:not-smoking :smoking] :c [:no-cancer :cancer] :t [:no-tar :tar] :g [:put-gene-0 :put-gene-1]}
+          :aliases {:s :smoking :c :cancer :t :tar :g :genotype}}
+        intervened-model
+        (assoc-in model [:nodes 't|s]
+          [
+           [0.5 0.5]
+           [0.5 0.5]
+           ])
+        ;im (intervene model 'x|z 0.5)
+        ]
+    (->> model
+     (graph->fg :sp/sp)
+      ;:graph
+      ;((fn [g] (lio/view g {:alg :neato :node-label name })))
+      (propagate-cycles 8)
+      last
+      marginals
       (named-marginals model)
     ))
 
@@ -693,6 +751,24 @@
 
 
 
+ (ch/view
+   (ch/xy-chart
+     {"os" (ch/extract-series
+             {:x first
+              :y last}
+             (reduce
+               (fn [[x u y] [x' u' y']]
+                 [x (+  )])
+               (map
+                (fn [x u]
+                  [x u (+ x u)]) (range 0 1 0.1) (repeatedly (fn [] (* 0.1 (rand)))))))}
+     {:title "4096 random nodes from all spaces - best LDA score, nc/nn"
+      :y-axis {:title "nl" :decimal-pattern "##.####"}
+      :x-axis {:title "nc" :decimal-pattern "##.####"}
+      :render-style :scatter}))
+
+  (require '[clojure.java.io :as io])
+  (require '[clojure.string :as string])
 
 
 
@@ -701,9 +777,23 @@
 
 
 
+  [[1.0 0.5 0.3]
+   [0.1 1.0 0.8]
+   [0.2 0.4 1.0]
+   ]
 
 
 
+  (lio/view (apply lg/weighted-digraph
+              (remove (comp zero? last) (apply concat
+                 (map-indexed
+                   (fn [i r] (map-indexed (fn [j x] [i j x]) r))
+                   (partition 3
+                     [
+                      0 0.5 1
+                      0 0 1
+                      0 0 0
+                      ]))))))
 
 
 
