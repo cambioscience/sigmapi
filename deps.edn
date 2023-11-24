@@ -14,7 +14,7 @@
      :extra-deps
      {
       com.hypirion/clj-xchart {:mvn/version "0.2.0"}
-      kixi/stats {:mvn/version "0.5.4"}
+      kixi/stats {:mvn/version "0.5.5"}
       }
      }
   }

@@ -330,6 +330,24 @@ max-sum algorithm with the given id")
   LogSpace
   (p [this x] (m/emap P x)))
 
+
+(deftype NormalVariableNode [id]
+  Messaging
+  (>< [this messages to]
+    {
+     :value     (apply m/add (map :value messages))
+     :repr      (if (== 1 (count messages)) (:repr (first messages)) (cons '∏ (map :repr messages)))
+     })
+  (<> [this messages to to-msg parent-msg]
+    (>< this messages to))
+  (i [this]
+    {:value 0 :repr id})
+  Variable
+  Passes
+  (pass? [this] false)
+  LogSpace
+  (p [this x] (m/emap P x)))
+
 (defmulti make-node
   (fn [{:keys [alg type] :as p}]
     [alg type]))
@@ -761,4 +779,4 @@ max-sum algorithm with the given id")
             ]
         (-> model
           (assoc :updated g)
-          (assoc :marginals (normalize-vals (sigmapi.core/unnormalized-marginals (propagate g)))))))
+          (assoc :marginals (normalize-vals (unnormalized-marginals (propagate g)))))))

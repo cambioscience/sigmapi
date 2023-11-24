@@ -1,8 +1,11 @@
 (ns sigmapi.test.core
   (:require
     [clojure.test :refer [deftest testing is]]
+    [clojure.math :as maths :refer [pow exp PI sqrt log ceil floor round]]
     [sigmapi.core :as sp :refer :all]
     [clojure.core.matrix :as m]
+    [kixi.stats.distribution :as xd]
+    [kixi.stats.core :as xc]
     [com.hypirion.clj-xchart :as ch]
     [loom.graph :as lg]
     [loom.alg :as la]
@@ -800,12 +803,111 @@
 
 
 
+(reduce + (map (fn [x] (* 0.5 (exp (- (pow x 2))))) (range -3 3 0.5)))
+
+(sqrt PI)
+
+(apply max-key identity (concat (range 0 0.9 0.1) (range 0.9 0 -0.1)))
+
+(apply max-key log (concat (range 0 0.9 0.1) (range 0.9 0 -0.1)))
+
+(map log (concat (range 0 0.9 0.1) (range 0.9 0 -0.1)))
 
 
+ (xd/normal {:mu 0 :sd 1})
 
 
+  (defn normal [mu sd]
+    (fn [x] (* (/ 1 (* sd (sqrt (* 2 PI)))) (exp (* -1/2 (pow (/ (- x mu) sd) 2))))))
 
+  (* 0.1 (reduce + (map (normal 0 1) (range -10 10 0.1))))
+
+  (let [r (range -5 5 0.1)
+        a (map (normal -1 0.2) r)
+        b (map (normal 2 0.7) r)
+        c (let [ab (map * a b) sab (/ 1 (reduce + (map (partial * 0.1) ab)))] (map (partial * sab) ab))]
+    (ch/view
+     (ch/xy-chart
+       {
+        "a" {:x r :y a}
+        "b" {:x r :y b}
+        "c" {:x r :y c}
+        }
+       {})))
+
+
+  (count (range -5 5 0.1))
 
   (test-Bayesian-updating)
 
-)
+
+  (let
+    [model
+     {:fg
+      (sp/fgtree
+        (:d [:pd [0.5 0.5]]
+          [:h|d&e
+           [
+            [[0.6 0.5 0.4] [0.8 0.5 0.2]]
+            [[0.4 0.5 0.6] [0.2 0.5 0.8]]
+            ]
+           (:e [:pe [1/2 1/2]])
+           (:h [:ph [1/3 1/3 1/3]]
+             [:pd|h
+              [
+               [0.9 0.1]
+               [0.5 0.5]
+               [0.1 0.9]
+               ]
+              (:dp)
+              ])
+           ]))
+      :priors
+      {:h :ph :d :pd :e :pe}}
+     ]
+    (->>
+      (reductions
+        (fn [{{p :dp} :marginals :as m} {d :pd :as data}]
+          (let [e (min 1 (max 0 (int (ceil (dec (reduce + (map (comp abs -) d p)))))))
+                pe (assoc [0 0] e 1)]
+            (update-priors
+             (assoc m :data (assoc data :pe pe)))))
+        model
+        [{:pd [1/2 1/2]}
+         {:pd [0 1]}
+         {:pd [0 1]}
+         {:pd [0 1]}
+         {:pd [0 1]}
+         {:pd [0 1]}
+         {:pd [0 1]}
+         {:pd [0 1]}
+         {:pd [0 1]}
+         {:pd [0 1]}
+         {:pd [0 1]}
+         {:pd [0 1]}
+         {:pd [0 1]}
+         {:pd [0 1]}
+         {:pd [0 1]}
+         {:pd [0 1]}
+         {:pd [0 1]}
+         {:pd [1 0]}
+         {:pd [1 0]}
+         {:pd [1 0]}
+         {:pd [1 0]}
+         {:pd [1 0]}
+         {:pd [1 0]}
+         ])
+      (map (juxt :marginals :data))
+      ))
+
+
+  (min 1 (int (reduce + (map (comp floor abs -) [0.3 0.7] [1 0]))))
+
+  (ceil (dec (reduce + (map (comp abs -) [1 0] [1 0]))))
+
+  (ceil (dec (reduce + (map (comp abs -) [0.3 0.7] [1 0]))))
+
+  (min 1 (int (reduce + (map (comp floor abs -) [0 1] [1 0]))))
+
+
+  )
