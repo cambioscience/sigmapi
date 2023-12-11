@@ -348,6 +348,28 @@ max-sum algorithm with the given id")
   LogSpace
   (p [this x] (m/emap P x)))
 
+(deftype NormalFactorNode
+  [f id dim-for-node]
+  Messaging
+  (>< [this messages to]
+    (let [
+          prod (combine f m/add messages to dim-for-node)
+          sum (m/emap ln- (map m/esum (m/emap P prod)))
+          ]
+      {
+       :value     sum
+       :repr      (cons '∑ (list (cons '∏ (list (:repr (i this)) (if (== 1 (count messages)) (:repr (first messages)) (map :repr messages))))))
+       }))
+  (<> [this messages to to-msg parent-msg]
+    (>< this messages to))
+  (i [this]
+    {:value f :repr id :dim-for-node dim-for-node})
+  Factor
+  Passes
+  (pass? [this] true)
+  LogSpace
+  (p [this x] (m/emap P x)))
+
 (defmulti make-node
   (fn [{:keys [alg type] :as p}]
     [alg type]))

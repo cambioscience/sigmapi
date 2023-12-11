@@ -9,7 +9,8 @@
     [com.hypirion.clj-xchart :as ch]
     [loom.graph :as lg]
     [loom.alg :as la]
-    [loom.io :as lio]))
+    [loom.io :as lio]
+    [emmy.env :as e]))
 
 (defn e= [e x y] (< (Math/abs (- x y)) e))
 
@@ -259,6 +260,15 @@
      )))
 
 
+
+(defn normal
+  [scale mean sd]
+  (fn [x]
+    (* scale
+      (exp
+        (* -1
+          (/ (pow (- x mean) 2)
+             (* 2 (pow sd 2))))))))
 
 
 (comment
@@ -873,41 +883,37 @@
             (update-priors
              (assoc m :data (assoc data :pe pe)))))
         model
-        [{:pd [1/2 1/2]}
-         {:pd [0 1]}
-         {:pd [0 1]}
-         {:pd [0 1]}
-         {:pd [0 1]}
-         {:pd [0 1]}
-         {:pd [0 1]}
-         {:pd [0 1]}
-         {:pd [0 1]}
-         {:pd [0 1]}
-         {:pd [0 1]}
-         {:pd [0 1]}
-         {:pd [0 1]}
-         {:pd [0 1]}
-         {:pd [0 1]}
-         {:pd [0 1]}
-         {:pd [0 1]}
-         {:pd [1 0]}
-         {:pd [1 0]}
-         {:pd [1 0]}
-         {:pd [1 0]}
-         {:pd [1 0]}
-         {:pd [1 0]}
-         ])
+        (->> [{:pd [1/2 1/2]}]
+          (into (interleave (repeat 8 {:pd [1 0]}) (repeat 8 {:pd [0 1]})))
+          (into (repeat 8 {:pd [0 1]}))))
       (map (juxt :marginals :data))
       ))
 
 
-  (min 1 (int (reduce + (map (comp floor abs -) [0.3 0.7] [1 0]))))
+  ((e/D e/square) 'x)
 
-  (ceil (dec (reduce + (map (comp abs -) [1 0] [1 0]))))
+  (e/D (e/square 'x))
 
-  (ceil (dec (reduce + (map (comp abs -) [0.3 0.7] [1 0]))))
+  (e/square 'x)
 
-  (min 1 (int (reduce + (map (comp floor abs -) [0 1] [1 0]))))
+  (map (fn [x] ((e/log (normal 1 0 1)) x)) (range -2 2 0.1))
+
+  ((e/log (normal 1 0 1)) x)
+
+  (e/simplify (e/log (normal 1 0 1)))
+
+  (e/simplify
+    (e/log
+      (e/*
+        (e// 1 (e/* 'sd (e/sqrt (e/* 2 PI))))
+        (e/exp (e/* -1/2 (e/expt (e// (e/- 'x 'mu) 'sd) 2))))))
+
+
+  '(/ (+ (* -1/2 (expt mean 2)) (* mean x) (* -1/2 (expt x 2)))
+      (expt sd 2))
+
+ (apply e/+ )
+
 
 
   )
