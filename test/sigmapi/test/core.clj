@@ -914,6 +914,6 @@
 
  (apply e/+ )
 
-
+(ns-unmap 'sigmapi.normal 'log2)
 
   )

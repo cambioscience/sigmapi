@@ -331,44 +331,6 @@ max-sum algorithm with the given id")
   (p [this x] (m/emap P x)))
 
 
-(deftype NormalVariableNode [id]
-  Messaging
-  (>< [this messages to]
-    {
-     :value     (apply m/add (map :value messages))
-     :repr      (if (== 1 (count messages)) (:repr (first messages)) (cons '∏ (map :repr messages)))
-     })
-  (<> [this messages to to-msg parent-msg]
-    (>< this messages to))
-  (i [this]
-    {:value 0 :repr id})
-  Variable
-  Passes
-  (pass? [this] false)
-  LogSpace
-  (p [this x] (m/emap P x)))
-
-(deftype NormalFactorNode
-  [f id dim-for-node]
-  Messaging
-  (>< [this messages to]
-    (let [
-          prod (combine f m/add messages to dim-for-node)
-          sum (m/emap ln- (map m/esum (m/emap P prod)))
-          ]
-      {
-       :value     sum
-       :repr      (cons '∑ (list (cons '∏ (list (:repr (i this)) (if (== 1 (count messages)) (:repr (first messages)) (map :repr messages))))))
-       }))
-  (<> [this messages to to-msg parent-msg]
-    (>< this messages to))
-  (i [this]
-    {:value f :repr id :dim-for-node dim-for-node})
-  Factor
-  Passes
-  (pass? [this] true)
-  LogSpace
-  (p [this x] (m/emap P x)))
 
 (defmulti make-node
   (fn [{:keys [alg type] :as p}]
@@ -434,32 +396,32 @@ max-sum algorithm with the given id")
                        (map
                          (fn [id]
                            [id (if-let [mat (get-in nodes [id :matrix])]
-                                 (make-node {:alg alg :type :sp/factor :graph g :id id
-                                             :cpm (m/matrix mat)
+                                 (make-node {:alg alg :type :sp/normal-factor :graph g :id id
+                                             :cpm mat
                                              :dfn (zipmap (neighbours id) (range))
                                              :mfn (zipmap (neighbours id) (map #(get-in nodes [% :matrix]) (neighbours id)))})
-                                 (make-node {:alg alg :type :sp/variable :id id}))])
+                                 (make-node {:alg alg :type :sp/normal-variable :id id}))])
                          (lg/nodes g)))})))
 
 (defn graph->fg [alg {:keys [nodes edges] :as graph}]
   (let [nodes' (into {} (concat
                           (map (fn [id] [id {:id (keyword (str id))}]) (remove nodes edges))
                           (map (fn [[id matrix]] [id {:id (keyword (str id)) :matrix matrix}]) nodes)))
-        edges'  (partition 2 (map nodes' edges))
+        edges' (partition 2 (map nodes' edges))
         ]
     (merge (edges->fg alg edges') (select-keys graph [:states :aliases]))))
 
 (defn update-factors
   "Replace nodes for the given matrices with new ones"
   ([model matrices]
-    (update-factors model matrices :cpm))
+   (update-factors model matrices :cpm))
   ([{g :graph alg :alg nodes :nodes :as model} matrices cmkey]
     (reduce
      (fn [model [id mat]]
        (let [n (nodes id) {dfn :dim-for-node} (i n)]
          (assoc-in model [:nodes id]
-           (make-node {:alg alg :type :sp/factor :graph g :id id cmkey (m/matrix mat) :dfn dfn}))))
-     model matrices)))
+           (make-node {:alg alg :type :sp/normal-factor :graph g :id id cmkey mat :dfn dfn}))))
+      model matrices)))
 
 (defn change-alg
   "
@@ -707,7 +669,7 @@ max-sum algorithm with the given id")
   (into {}
     (map
       (fn [[id node]]
-        [id (vec (m/emap P (maybe-list (:value (<> node (vals (get messages id)) nil nil nil)))))])
+        [id (vec (maybe-list (:value (<> node (vals (get messages id)) nil nil nil))))])
       (filter (comp (fn [n] (satisfies? Variable n)) val) nodes))))
 
 (def marginals
@@ -794,11 +756,13 @@ max-sum algorithm with the given id")
   [{:keys [fg updated marginals priors data] :as model}]
       (let [
              {nodes :nodes :as graph} (or updated (exp->fg :sp/sp fg))
-              post (or marginals (zipmap (keys priors) (map (comp (partial map P) :value i nodes) (map (fn [v] (if (keyword? v) v (last v))) (vals priors)))))
+              post (or marginals (zipmap (keys priors) (map (comp :value i nodes) (map (fn [v] (if (keyword? v) v (last v))) (vals priors)))))
               p2 (select-keys post (keys priors))
               p1 (merge (zipmap (map (fn [v] (if (keyword? v) v (first v))) (vals priors)) (map p2 (keys priors))) data)
               g (update-factors graph p1)
             ]
         (-> model
           (assoc :updated g)
-          (assoc :marginals (normalize-vals (unnormalized-marginals (propagate g)))))))
+          (assoc :marginals (unnormalized-marginals (propagate g)))
+          ;(assoc :marginals (normalize-vals (unnormalized-marginals (propagate g))))
+          )))
