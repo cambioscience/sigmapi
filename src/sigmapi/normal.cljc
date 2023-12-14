@@ -4,9 +4,24 @@
     [clojure.math :as maths :refer [PI]]
     [sigmapi.core :as sp :refer :all :rename {log2 logg2}]
     [clojure.core.matrix :as m]
+    [kixi.stats.distribution :as xd]
     [emmy.env :as e :refer :all]
     [emmy.matrix :as em]))
 
+; why do people persist in using private ?
+(alter-meta! #'em/delete assoc :private false)
+
+(defn broadcast [f]
+  (fn [[x & xs :as tx]]
+    (f x)))
+
+(defn normal [mu sd]
+  (with-meta
+    (fn [x]
+     (*
+       (/ 1 (* sd (sqrt (* 2 PI))))
+       (exp (* -1/2 (expt (/ (- x mu) sd) 2)))))
+    {:mu mu :sigma sd :sigma-1 (/ 1 sd)}))
 
 (defn normal-log [mu sd]
   (fn [x]
@@ -28,41 +43,45 @@
           x-mu (- x mu)
           sigma-1 (em/invert sigma)
           det-sigma (em/determinant sigma)]
-      (em/get-in
+      (get-in
         (+
           (* -1/2 (em/transpose x-mu) sigma-1 x-mu)
           (* -0.9189385332046727 k)
           (* -1/2 (log det-sigma)))
         [0 0]))))
 
-(defn multivariate-normal [mu sigma]
-  (fn [x]
-    (let [sigma (apply em/by-rows sigma)
-          mu (apply em/column mu)
-          k (count x)
-          x (apply em/column x)
-          x-mu (- x mu)
-          sigma-1 (em/invert sigma)
-          det-sigma (em/determinant sigma)]
-      (em/get-in
-        (/
-          (exp (* -1/2 (em/transpose x-mu) sigma-1 x-mu))
-          (sqrt (* (expt (* 2 PI) k) det-sigma)))
-        [0 0]))))
+(defn multivariate-normal
+  ([mu sigma]
+   (let [mu (apply em/column mu)
+         sigma (apply em/by-rows sigma)
+         sigma-1 (em/invert sigma)]
+     (multivariate-normal mu sigma sigma-1)))
+  ([mu sigma sigma-1]
+     (with-meta
+       (fn [x]
+         ;(println "  mvn:" x ((juxt em/num-rows em/num-cols) mu) ((juxt em/num-rows em/num-cols) sigma))
+         (let [k (count x)
+               x (apply em/column x)
+               x-mu (- x mu)
+               det-sigma (em/determinant sigma)]
+           (/
+             (exp (get-in (* -1/2 (em/transpose x-mu) sigma-1 x-mu) [0 0]))
+             (sqrt (* (expt (* 2 PI) k) det-sigma)))))
+       {:mu mu :sigma sigma :sigma-1 sigma-1})))
 
 (deftype NormalVariableNode [id]
   sp/Messaging
   (>< [this messages to]
-    (println " v><" id (map (juxt :id :value) messages))
+    ;(println " v><" id (map (juxt :id :value) messages))
     {
-     :value     (map * (map :value messages))
+     :value     (apply * (map :value messages))
      :repr      (if (== 1 (count messages)) (:repr (first messages)) (cons '∏ (map :repr messages)))
      })
   (<> [this messages to to-msg parent-msg]
-    (print "  v<>" id)
+    ;(print "  v<>" id)
     (>< this messages to))
   (i [this]
-    {:value 0 :repr id})
+    {:value (with-meta (fn identity [x] 1) {:mu 0 :sigma 0 :sigma-1 0}) :repr id})
   sp/Variable
   sp/Passes
   (pass? [this] false))
@@ -71,18 +90,24 @@
   [f id dim-for-node]
   sp/Messaging
   (>< [this messages to]
-    (println " f><" id (map (juxt :id :value) messages))
+    ;(println " f><" id f (map (juxt :id :value) messages))
     (let [
-          ; pointwise product of functions
-          prod (map * (map :value messages))
-          sum  (map + prod)
+          i (dim-for-node to)
+          ;_ (println "  " (map (comp :sigma-1 meta :value) (cons {:value f} messages)))
+          sigma (em/invert (apply + (map (comp :sigma-1 meta :value) (cons {:value f} messages))))
+          mu (* sigma (apply + (map (comp :sigma-1 meta :value) (cons {:value f} messages))))
+          ;p (multivariate-normal mu sigma)
+          sigma' (em/without sigma i i)
+          mu' (em/by-rows (em/delete (get mu 0) i))
+          ;_ (println "  ms:" ((juxt em/num-rows em/num-cols) mu') ((juxt em/num-rows em/num-cols) sigma') (get-in mu' [0 0]))
+          s (if (> (em/num-cols mu') 1) (multivariate-normal mu' sigma') (normal (get-in mu' [0 0]) (get-in sigma' [0 0])))
           ]
       {
-       :value     sum
-       :repr      (cons '∑ (list (cons '∏ (list (:repr (i this)) (if (== 1 (count messages)) (:repr (first messages)) (map :repr messages))))))
+       :value     s
+       ;:repr      (cons '∑ (list (cons '∏ (list (:repr (i this)) (if (== 1 (count messages)) (:repr (first messages)) (map :repr messages))))))
        }))
   (<> [this messages to to-msg parent-msg]
-    (print "  f<>" id)
+    ;(print "  f<>" id)
     (>< this messages to))
   (i [this]
     {:value f :repr id :dim-for-node dim-for-node})
@@ -96,7 +121,7 @@
 
 (defmethod make-node [:sp/sp :sp/normal-factor]
   ([{:keys [graph id clm cpm dfn]}]
-    (NormalFactorNode. cpm id dfn)))
+    (NormalFactorNode. (apply (if (number? (first cpm)) normal multivariate-normal) cpm) id dfn)))
 
 
 
@@ -152,7 +177,29 @@
   ((multivariate-normal-log [0 0] [[1 0.5] [0.5 1]]) [0 0])
 
 
+  ((*
+     (multivariate-normal [0 0] [[1 0.5] [0.5 1]])
+     (broadcast (normal 0 1))) [2 2])
+
+(sum
+  (*
+   (multivariate-normal [0 0] [[1 0.5] [0.5 1]])
+   (fn identity [x] 1)) -1 1)
+
+
+  (apply + [(apply em/by-rows [[1 0.5] [0.5 1]]) (apply em/by-rows [[1 0.5] [0.5 1]])])
+
+  ((multivariate-normal [0 0] [[1 0.5] [0.5 1]]) [0 0])
+
   (* (expt (apply em/column [1 0.3]) 2) (apply em/by-rows [[1 0.5] [0.5 1]]))
+
+  ((compose (literal-function 'f) (literal-function 'g)) 'x)
+
+((broadcast (normal 0 1)) [0 0])
+
+  (exp (em/column [2 3]))
+
+  (exp 5)
 
 (print-cause-trace *e)
 
@@ -162,7 +209,7 @@
       (sp/fgtree
         (:d [:pd [0.5 0.5]]
           [:h|d
-           [[0.6 0.5 0.4] [0.8 0.5 0.2]]
+           [[0 0] [[0.6 0.4] [0.8 0.2]]]
            (:h)
            ]))
       :priors
@@ -176,11 +223,50 @@
         model
        [{:pd [0 1]}])
       (map :marginals)
+      rest
+      first
+      :h
+      first
+      ((fn [f] (f 0.3)))
       ))
 
+(get-in (em/by-rows [1]) [0 0])
+
+  "
+
+  V>< :h ([1.3219280948873622 1.3219280948873622 2.321928094887362])
+  V>< :d ([##Inf -0.0])
+  F>< :h|d ([##Inf -0.0])
+  p: [[##Inf 1.0] [##Inf 0.7369655941662062] [##Inf 0.15200309344504997]]  s: [1.0 0.7369655941662062 0.15200309344504997]
+  V>< :h ([1.0 0.7369655941662062 0.15200309344504997])
+  V>< :h ([1.3219280948873622 1.3219280948873622 2.321928094887362])
+  F>< :h|d ([1.3219280948873622 1.3219280948873622 2.321928094887362])
+  p: [[2.321928094887362 2.6438561897747244 5.643856189774724] [2.321928094887362 2.0588936890535683 2.473931188332412]]  s: [1.3959286763311392 0.6896598793878492]
+  V>< :d ([1.3959286763311392 0.6896598793878492])
+  V>< :h ([1.3219280948873622 1.3219280948873622 2.321928094887362] [1.0 0.7369655941662062 0.15200309344504997])
+  V>< :d ([##Inf -0.0] [1.3959286763311392 0.6896598793878492])
+  V>< :h ([1.6322682154995132 1.369233809665719 1.784271308944563])
+  V>< :d ([##Inf -0.0])
+  F>< :h|d ([##Inf -0.0])
+  p: [[##Inf 1.0] [##Inf 0.7369655941662062] [##Inf 0.15200309344504997]]  s: [1.0 0.7369655941662062 0.15200309344504997]
+  V>< :h ([1.0 0.7369655941662062 0.15200309344504997])
+  V>< :h ([1.6322682154995132 1.369233809665719 1.784271308944563])
+  F>< :h|d ([1.6322682154995132 1.369233809665719 1.784271308944563])
+  p: [[2.632268215499513 2.6911619045530815 5.106199403831925] [2.632268215499513 2.1061994038319254 1.936274402389613]]  s: [1.534657418873091 0.6107884880890615]
+  V>< :d ([1.534657418873091 0.6107884880890615])
+  V>< :h ([1.6322682154995132 1.369233809665719 1.784271308944563] [1.0 0.7369655941662062 0.15200309344504997])
+  V>< :d ([##Inf -0.0] [1.534657418873091 0.6107884880890615])
 
 
 
+  "
 
+(m/mmul (m/matrix [[1]]) [1])
+
+  (* (apply em/by-rows [[1 0] [0 1]]) (em/row 1))
+
+  (apply em/by-rows (em/delete (em/column 1 2 3) 1))
+
+  (em/invert (em/row 2))
 
 )

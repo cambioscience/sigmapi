@@ -890,6 +890,8 @@
       ))
 
 
+
+
   ((e/D e/square) 'x)
 
   (e/D (e/square 'x))
