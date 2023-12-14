@@ -281,7 +281,7 @@
       (fn [] (:result (MHP {:correct-door (rand-int 3) :choose-door (rand-int 3)})))))
 
 
-
+(test-Bayesian-updating)
 
   (->>
       (fgtree
