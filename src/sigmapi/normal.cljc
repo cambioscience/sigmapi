@@ -21,7 +21,7 @@
      (*
        (/ 1 (* sd (sqrt (* 2 PI))))
        (exp (* -1/2 (expt (/ (- x mu) sd) 2)))))
-    {:mu mu :sigma sd :sigma-1 (/ 1 sd)}))
+    {:mu mu :sigma sd :sigma-1 (if (== 0 sd) 0 (/ 1 sd))}))
 
 (defn normal-log [mu sd]
   (fn [x]
@@ -217,7 +217,7 @@
       (sp/fgtree
         (:d [:pd [0.5 0.5]]
           [:h|d
-           [[0 0] [[0.6 0.4] [0.8 0.2]]]
+           [[0 1] [[6 1] [0.5 0.8]]]
            (:h)
            ]))
       :priors
@@ -226,16 +226,17 @@
   ;(i (get-in (exp->fg :sp/sp (:fg model)) [:nodes :d]))
   (->>
     (reductions
-      (fn [{{p :dp} :marginals :as m} {d :pd :as data}]
-          (update-priors (assoc m :data data)))
+      (fn [{{[h] :h} :marginals :as m} {d :pd :as data}]
+         (println ">" ((or h identity) 0.5))
+         (update-priors (assoc m :data data)))
         model
-       [{:pd [0 1]}])
+       (interleave (repeat 4 {:pd [1 0]}) (repeat 4 {:pd [0 1]})))
       (map :marginals)
       rest
-      first
+      last
       :h
       first
-      ((fn [f] (f 0.3)))
+      ((fn [f] (map (juxt identity f) (range 0 1 0.1))))
       ))
 
 (get-in (em/by-rows [1]) [0 0])

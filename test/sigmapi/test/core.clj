@@ -281,7 +281,30 @@
       (fn [] (:result (MHP {:correct-door (rand-int 3) :choose-door (rand-int 3)})))))
 
 
+
 (test-Bayesian-updating)
+
+  (let
+    [model
+     {:fg
+      (sp/fgtree
+        (:d [:pd [0.5 0.5]]
+          [:h|d
+           [
+            [0.6 0.5 0.4]
+            [0.4 0.5 0.6]
+            ]
+           (:h [:ph [1/3 1/3 1/3]])
+           ]))
+      :priors
+      {:h :ph :d :pd}}
+     experiment
+       (assoc model :data (repeat 8 {:pd [1 0]}))
+       {h :h} (-> experiment sp/updated-variables :marginals)
+       expected [0.2463 0.3547 0.3990]
+       result (map (fn [hv ev] [hv ev (e= 10e-5 hv ev)]) h expected)
+     ]
+    h)
 
   (->>
       (fgtree
