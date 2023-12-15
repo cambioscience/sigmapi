@@ -701,8 +701,9 @@
   (let [mat (-> (m/reshape (range 27) [3 3 3]) m/matrix)]
     (cc/quick-bench (-> mat (m/transpose [2 1 0]) )))
 
+(m/emap + [1 2] [[1 2] [3 4]])
 
-
+  (m/inverse [[1 2] [3 4]])
 
 
 

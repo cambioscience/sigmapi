@@ -11,6 +11,8 @@
 ; why do people persist in using private ?
 (alter-meta! #'em/delete assoc :private false)
 
+(def shape (juxt em/num-rows em/num-cols))
+
 (defn broadcast [f]
   (fn [[x & xs :as tx]]
     (f x)))
@@ -21,12 +23,12 @@
      (*
        (/ 1 (* sd (sqrt (* 2 PI))))
        (exp (* -1/2 (expt (/ (- x mu) sd) 2)))))
-    {:mu mu :sigma sd :sigma-1 (if (== 0 sd) 0 (/ 1 sd))}))
+    {:mu (em/by-rows [mu]) :sigma (em/by-rows [sd]) :sigma-1 (em/by-rows [(if (== 0 sd) 0 (/ 1 sd))])}))
 
 (defn normal-log [mu sd]
   (fn [x]
-     (/
-       (+
+    (/
+      (+
         (* -1 (expt sd 2) (log sd))
         (* -1/2 (expt mu 2))
         (* mu x)
@@ -73,29 +75,48 @@
   sp/Messaging
   (>< [this messages to]
     ;(println " v><" id (map (juxt :id :value) messages))
-    {
-     :value     (apply * (map :value messages))
-     :repr      (if (== 1 (count messages)) (:repr (first messages)) (cons '∏ (map :repr messages)))
-     })
+    (let [;sigma (em/invert (apply + (map (comp :sigma-1 meta :value) messages)))
+          s1s (map (comp :sigma-1 meta :value) messages)
+          mus (map (comp :mu meta :value) messages)
+          s1+ (apply + s1s)
+          _ (println "V:" s1+)
+          sigma (if (number? s1+) (if (== 0 s1+) 0 (/ 1 s1+)) (if (== 0 (get-in s1+ [0 0])) s1+ (em/invert s1+)))
+          mu (* sigma (apply + (map * s1s mus)))
+          ;p (multivariate-normal mu sigma)
+          ]
+      {
+      :value (apply * (map :value messages))
+      :repr (if (== 1 (count messages)) (:repr (first messages)) (cons '∏ (map :repr messages)))
+      }))
   (<> [this messages to to-msg parent-msg]
     ;(print "  v<>" id)
     (>< this messages to))
   (i [this]
-    {:value (with-meta (fn identity [x] 1) {:mu 0 :sigma 0 :sigma-1 0}) :repr id})
+    {:value (with-meta (fn identity [x] (em/by-rows [1])) {:mu 0 :sigma 0 :sigma-1 0}) :repr id})
   sp/Variable
   sp/Passes
   (pass? [this] false))
+
+(defn ensure-matrix [x]
+  (let [x' (em/matrix->vector x)
+        s (shape x)]
+    (if (= s [1 1]) (ffirst x') (m/matrix x'))))
 
 (deftype NormalFactorNode
   [f id dim-for-node]
   sp/Messaging
   (>< [this messages to]
     ;(println " f><" id f (map (juxt :id :value) messages))
+    ;
+    ; You were multiplying mu and sigma-1s
+    ;
     (let [
           i (dim-for-node to)
-          ;_ (println "  " (map (comp :sigma-1 meta :value) (cons {:value f} messages)))
-          sigma (em/invert (apply + (map (comp :sigma-1 meta :value) (cons {:value f} messages))))
-          mu (* sigma (apply + (map (comp :sigma-1 meta :value) (cons {:value f} messages))))
+          s1s (map (comp :sigma-1 meta :value) (cons {:value f} messages))
+          mus (map (comp :mu meta :value) (cons {:value f} messages))
+          sigma (m/inverse (apply m/emap + (map ensure-matrix s1s)))
+          _ (println "F: " (map (partial m/emap clojure.core/*) (map ensure-matrix mus) s1s))
+          mu (apply em/by-rows (m/mmul sigma (apply m/esum (map (partial m/emap *) (map ensure-matrix mus) s1s))))
           ;p (multivariate-normal mu sigma)
           sigma' (em/without sigma i i)
           mu' (em/by-rows (em/delete (get mu 0) i))
@@ -218,10 +239,10 @@
         (:d [:pd [0.5 0.5]]
           [:h|d
            [[0 1] [[6 1] [0.5 0.8]]]
-           (:h)
+           (:h [:ph [1/2 1]])
            ]))
       :priors
-      {:d :pd}}
+      {:d :pd :h :ph}}
      ]
   ;(i (get-in (exp->fg :sp/sp (:fg model)) [:nodes :d]))
   (->>
@@ -239,7 +260,21 @@
       ((fn [f] (map (juxt identity f) (range 0 1 0.1))))
       ))
 
-(get-in (em/by-rows [1]) [0 0])
+  (* (apply em/by-rows [[2 1]]) (apply em/by-rows [[2 0] [0 1]]))
+
+  (+ (apply em/by-rows [[2]]) (apply em/by-rows [[2 0] [0 1]]))
+
+  (em/matrix->vector (apply em/by-rows [[2 0] [0 1]]))
+
+  (apply m/emap +
+    [(em/matrix->vector (apply em/by-rows [[2 0] [0 1]]))
+     1])
+
+  (m/broadcast 0 [2 2])
+
+  (shape (apply em/by-rows [[2]]))
+
+  (shape (apply em/by-rows [[2 0] [0 1]]))
 
   "
 
