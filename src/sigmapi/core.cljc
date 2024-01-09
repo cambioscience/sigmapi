@@ -418,7 +418,6 @@ max-sum algorithm with the given id")
     (reduce
      (fn [model [id mat]]
        (let [n (nodes id) {dfn :dim-for-node} (i n)]
-         (println "mn:" id mat)
          (assoc-in model [:nodes id]
            (make-node {:alg alg :type :sp/normal-factor :graph g :id id cmkey mat :dfn dfn}))))
       model matrices)))
@@ -669,7 +668,7 @@ max-sum algorithm with the given id")
   (into {}
     (map
       (fn [[id node]]
-        [id (vec (maybe-list (:value (<> node (vals (get messages id)) nil nil nil))))])
+        [id (:value (<> node (vals (get messages id)) nil nil nil))])
       (filter (comp (fn [n] (satisfies? Variable n)) val) nodes))))
 
 (def marginals
@@ -759,7 +758,6 @@ max-sum algorithm with the given id")
               post (or marginals (zipmap (keys priors) (map (comp :value i nodes) (map (fn [v] (if (keyword? v) v (last v))) (vals priors)))))
               p2 (select-keys post (keys priors))
               p1 (merge (zipmap (map (fn [v] (if (keyword? v) v (first v))) (vals priors)) (map (comp (juxt :mu :sigma) meta p2) (keys priors))) data)
-              _ (println "up:" p1)
               g (update-factors graph p1)
             ]
         (-> model

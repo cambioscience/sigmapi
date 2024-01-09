@@ -23,7 +23,7 @@
      (*
        (/ 1 (* sd (sqrt (* 2 PI))))
        (exp (* -1/2 (expt (/ (- x mu) sd) 2)))))
-    {:mu (em/by-rows [mu]) :sigma (em/by-rows [sd]) :sigma-1 (em/by-rows [(if (== 0 sd) 0 (/ 1 sd))])}))
+    {:mu mu :sigma sd :sigma-1 (if (== 0 sd) 0 (/ 1 sd))}))
 
 (defn normal-log [mu sd]
   (fn [x]
@@ -39,7 +39,7 @@
 (defn multivariate-normal-log [mu sigma]
   (fn [x]
     (let [sigma (apply em/by-rows sigma)
-          mu (apply em/column mu)
+          mu (apply em/row mu)
           k (count x)
           x (apply em/column x)
           x-mu (- x mu)
@@ -54,14 +54,13 @@
 
 (defn multivariate-normal
   ([mu sigma]
-   (let [mu (apply em/column mu)
+   (let [mu (apply em/row mu)
          sigma (apply em/by-rows sigma)
          sigma-1 (em/invert sigma)]
      (multivariate-normal mu sigma sigma-1)))
   ([mu sigma sigma-1]
      (with-meta
        (fn [x]
-         ;(println "  mvn:" x ((juxt em/num-rows em/num-cols) mu) ((juxt em/num-rows em/num-cols) sigma))
          (let [k (count x)
                x (apply em/column x)
                x-mu (- x mu)
@@ -74,54 +73,48 @@
 (deftype NormalVariableNode [id]
   sp/Messaging
   (>< [this messages to]
-    ;(println " v><" id (map (juxt :id :value) messages))
-    (let [;sigma (em/invert (apply + (map (comp :sigma-1 meta :value) messages)))
-          s1s (map (comp :sigma-1 meta :value) messages)
+    (let [s1s (map (comp :sigma-1 meta :value) messages)
           mus (map (comp :mu meta :value) messages)
           s1+ (apply + s1s)
-          _ (println "V:" s1+)
-          sigma (if (number? s1+) (if (== 0 s1+) 0 (/ 1 s1+)) (if (== 0 (get-in s1+ [0 0])) s1+ (em/invert s1+)))
+          sigma (if (== 0 s1+) s1+ (/ 1 s1+))
           mu (* sigma (apply + (map * s1s mus)))
-          ;p (multivariate-normal mu sigma)
           ]
       {
-      :value (apply * (map :value messages))
+      :value (normal mu sigma)
       :repr (if (== 1 (count messages)) (:repr (first messages)) (cons '∏ (map :repr messages)))
       }))
   (<> [this messages to to-msg parent-msg]
     ;(print "  v<>" id)
     (>< this messages to))
   (i [this]
-    {:value (with-meta (fn identity [x] (em/by-rows [1])) {:mu 0 :sigma 0 :sigma-1 0}) :repr id})
+    {:value (with-meta (fn identity [x] (em/by-rows [1])) {:mu 0 :sigma 1 :sigma-1 1}) :repr id})
   sp/Variable
   sp/Passes
   (pass? [this] false))
-
-(defn ensure-matrix [x]
-  (let [x' (em/matrix->vector x)
-        s (shape x)]
-    (if (= s [1 1]) (ffirst x') (m/matrix x'))))
 
 (deftype NormalFactorNode
   [f id dim-for-node]
   sp/Messaging
   (>< [this messages to]
-    ;(println " f><" id f (map (juxt :id :value) messages))
-    ;
-    ; You were multiplying mu and sigma-1s
-    ;
     (let [
           i (dim-for-node to)
-          s1s (map (comp :sigma-1 meta :value) (cons {:value f} messages))
-          mus (map (comp :mu meta :value) (cons {:value f} messages))
-          sigma (m/inverse (apply m/emap + (map ensure-matrix s1s)))
-          _ (println "F: " (map (partial m/emap clojure.core/*) (map ensure-matrix mus) s1s))
-          mu (apply em/by-rows (m/mmul sigma (apply m/esum (map (partial m/emap *) (map ensure-matrix mus) s1s))))
-          ;p (multivariate-normal mu sigma)
-          sigma' (em/without sigma i i)
-          mu' (em/by-rows (em/delete (get mu 0) i))
-          ;_ (println "  ms:" ((juxt em/num-rows em/num-cols) mu') ((juxt em/num-rows em/num-cols) sigma') (get-in mu' [0 0]))
-          s (if (> (em/num-cols mu') 1) (multivariate-normal mu' sigma') (normal (get-in mu' [0 0]) (get-in sigma' [0 0])))
+          d (count dim-for-node)
+          mu (:mu (meta f))
+          s1 (:sigma-1 (meta f))
+          d (em/num-cols s1)
+          zv (em/make-zero 1 d)
+          zm (em/make-zero d)
+          s1s (map (fn [{v :value id :id}] (let [j (dim-for-node id)] (assoc-in zm [j j] (:sigma-1 (meta v))))) messages)
+          mus (map (fn [{v :value id :id}] (let [j (dim-for-node id)] (assoc-in zv [0 j] (:mu (meta v))))) messages)
+          sigma (em/invert (apply + (cons s1 s1s)))
+          mu (* (apply + (map * (cons mu mus) (cons s1 s1s))) sigma)
+          p (multivariate-normal mu sigma)
+          ; summing (integrating) over all variables except to
+          ; is the same as the marginal of to (all the other variables are marginalized out)
+          ; https://statproofbook.github.io/P/mvn-marg.html
+          sigma' (em/get-in sigma [i i])
+          mu' (em/get-in mu [0 i])
+          s (normal mu' sigma')
           ]
       {
        :value     s
@@ -247,20 +240,45 @@
   ;(i (get-in (exp->fg :sp/sp (:fg model)) [:nodes :d]))
   (->>
     (reductions
-      (fn [{{[h] :h} :marginals :as m} {d :pd :as data}]
-         (println ">" ((or h identity) 0.5))
+      (fn update-it [{{h :h} :marginals :as m} {d :pd :as data}]
          (update-priors (assoc m :data data)))
         model
-       (interleave (repeat 4 {:pd [1 0]}) (repeat 4 {:pd [0 1]})))
+       (interleave (repeat 4 {:pd [1 1]}) (repeat 4 {:pd [0 1]})))
       (map :marginals)
       rest
       last
       :h
-      first
-      ((fn [f] (map (juxt identity f) (range 0 1 0.1))))
+      ((fn [f] (map (juxt identity f) (range -2 2 0.4))))
       ))
 
-  (* (apply em/by-rows [[2 1]]) (apply em/by-rows [[2 0] [0 1]]))
+
+  (assoc-in (em/make-zero 1 3) [0 1] 3)
+
+  (em/invert (em/by-rows [2]))
+
+  [[0] [1]]
+  1
+
+  [[0.18604651162790695 -0.2325581395348837]
+   [-0.11627906976744184 1.3953488372093021]]
+  0
+
+  (+
+    [[0.18604651162790695 -0.2325581395348837] [-0.11627906976744184 1.3953488372093021]]
+    (apply em/row [0 0])
+    )
+
+
+
+(em/num-cols (apply em/row [0 0]))
+
+  (em/by-rows (repeat 4 (ffirst (em/matrix->vector (apply em/row [0])))))
+
+  (m/mmul [0 1]
+    [[0.18604651162790695 -0.2325581395348837]
+     [-0.11627906976744184 1.3953488372093021]])
+
+  (* (apply em/row [2 1]) (apply em/by-rows [[2 0] [0 1]]))
 
   (+ (apply em/by-rows [[2]]) (apply em/by-rows [[2 0] [0 1]]))
 
