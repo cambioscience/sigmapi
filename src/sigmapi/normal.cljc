@@ -229,26 +229,25 @@
     [model
      {:fg
       (sp/fgtree
-        (:d [:pd [0.5 0.5]]
+        (:d [:pd [0.5 1]]
           [:h|d
-           [[0 1] [[6 1] [0.5 0.8]]]
-           (:h [:ph [1/2 1]])
+           [[0.5 0.5] [[1 0.7] [0.7 1]]]
+           (:h [:ph [1/2 4]])
            ]))
       :priors
       {:d :pd :h :ph}}
      ]
-  ;(i (get-in (exp->fg :sp/sp (:fg model)) [:nodes :d]))
   (->>
     (reductions
       (fn update-it [{{h :h} :marginals :as m} {d :pd :as data}]
          (update-priors (assoc m :data data)))
         model
-       (interleave (repeat 4 {:pd [1 1]}) (repeat 4 {:pd [0 1]})))
+       (interleave (repeat 8 {:pd [0 0.1]}) (repeat 8 {:pd [0 0.1]})))
       (map :marginals)
       rest
       last
       :h
-      ((fn [f] (map (juxt identity f) (range -2 2 0.4))))
+      ((fn [f] (map (juxt identity f) (range 0 1 0.125))))
       ))
 
 
