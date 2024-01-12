@@ -8,9 +8,6 @@
     [emmy.env :as e :refer :all]
     [emmy.matrix :as em]))
 
-; why do people persist in using private ?
-(alter-meta! #'em/delete assoc :private false)
-
 (def shape (juxt em/num-rows em/num-cols))
 
 (defn broadcast [f]
@@ -41,7 +38,7 @@
     (let [sigma (apply em/by-rows sigma)
           mu (apply em/row mu)
           k (count x)
-          x (apply em/column x)
+          x (apply em/row x)
           x-mu (- x mu)
           sigma-1 (em/invert sigma)
           det-sigma (em/determinant sigma)]
@@ -97,7 +94,7 @@
   sp/Messaging
   (>< [this messages to]
     (let [
-          i (dim-for-node to)
+          to-dim (dim-for-node to)
           d (count dim-for-node)
           mu (:mu (meta f))
           s1 (:sigma-1 (meta f))
@@ -108,20 +105,19 @@
           mus (map (fn [{v :value id :id}] (let [j (dim-for-node id)] (assoc-in zv [0 j] (:mu (meta v))))) messages)
           sigma (em/invert (apply + (cons s1 s1s)))
           mu (* (apply + (map * (cons mu mus) (cons s1 s1s))) sigma)
-          p (multivariate-normal mu sigma)
+          ;  p (multivariate-normal mu sigma)
           ; summing (integrating) over all variables except to
           ; is the same as the marginal of to (all the other variables are marginalized out)
           ; https://statproofbook.github.io/P/mvn-marg.html
-          sigma' (em/get-in sigma [i i])
-          mu' (em/get-in mu [0 i])
+          sigma' (em/get-in sigma [to-dim to-dim])
+          mu' (em/get-in mu [0 to-dim])
           s (normal mu' sigma')
           ]
       {
        :value     s
-       ;:repr      (cons '∑ (list (cons '∏ (list (:repr (i this)) (if (== 1 (count messages)) (:repr (first messages)) (map :repr messages))))))
+       :repr      (cons '∑ (list (cons '∏ (list (:repr (i this)) (if (== 1 (count messages)) (:repr (first messages)) (map :repr messages))))))
        }))
   (<> [this messages to to-msg parent-msg]
-    ;(print "  f<>" id)
     (>< this messages to))
   (i [this]
     {:value f :repr id :dim-for-node dim-for-node})
@@ -231,7 +227,7 @@
       (sp/fgtree
         (:d [:pd [0.5 1]]
           [:h|d
-           [[0.5 0.5] [[1 0.7] [0.7 1]]]
+           [[0.5 0.5] [[0.5 0.7] [0.7 2]]]
            (:h [:ph [1/2 4]])
            ]))
       :priors
@@ -240,58 +236,15 @@
   (->>
     (reductions
       (fn update-it [{{h :h} :marginals :as m} {d :pd :as data}]
-         (update-priors (assoc m :data data)))
+         (update-priors (assoc m :data (assoc data :ph [0.5 4]))))
         model
-       (interleave (repeat 8 {:pd [0 0.1]}) (repeat 8 {:pd [0 0.1]})))
-      (map :marginals)
+       (interleave (repeat 8 {:pd [0 0.1]}) (repeat 8 {:pd [1 0.1]})))
+      (map (comp :h :marginals))
       rest
-      last
-      :h
-      ((fn [f] (map (juxt identity f) (range 0 1 0.125))))
+      (map (fn [f] (map (juxt identity f) (range 0 1.25 0.25))))
       ))
 
 
-  (assoc-in (em/make-zero 1 3) [0 1] 3)
-
-  (em/invert (em/by-rows [2]))
-
-  [[0] [1]]
-  1
-
-  [[0.18604651162790695 -0.2325581395348837]
-   [-0.11627906976744184 1.3953488372093021]]
-  0
-
-  (+
-    [[0.18604651162790695 -0.2325581395348837] [-0.11627906976744184 1.3953488372093021]]
-    (apply em/row [0 0])
-    )
-
-
-
-(em/num-cols (apply em/row [0 0]))
-
-  (em/by-rows (repeat 4 (ffirst (em/matrix->vector (apply em/row [0])))))
-
-  (m/mmul [0 1]
-    [[0.18604651162790695 -0.2325581395348837]
-     [-0.11627906976744184 1.3953488372093021]])
-
-  (* (apply em/row [2 1]) (apply em/by-rows [[2 0] [0 1]]))
-
-  (+ (apply em/by-rows [[2]]) (apply em/by-rows [[2 0] [0 1]]))
-
-  (em/matrix->vector (apply em/by-rows [[2 0] [0 1]]))
-
-  (apply m/emap +
-    [(em/matrix->vector (apply em/by-rows [[2 0] [0 1]]))
-     1])
-
-  (m/broadcast 0 [2 2])
-
-  (shape (apply em/by-rows [[2]]))
-
-  (shape (apply em/by-rows [[2 0] [0 1]]))
 
   "
 
@@ -322,12 +275,6 @@
 
   "
 
-(m/mmul (m/matrix [[1]]) [1])
 
-  (* (apply em/by-rows [[1 0] [0 1]]) (em/row 1))
-
-  (apply em/by-rows (em/delete (em/column 1 2 3) 1))
-
-  (em/invert (em/row 2))
 
 )
