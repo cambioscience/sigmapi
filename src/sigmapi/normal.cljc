@@ -89,22 +89,28 @@
   sp/Passes
   (pass? [this] false))
 
+(defn product-of-normals
+  ([f id dim-for-node messages to-dim]
+   (let
+     [d (count dim-for-node)
+      mu (:mu (meta f))
+      s1 (:sigma-1 (meta f))
+      d (em/num-cols s1)
+      zv (em/make-zero 1 d)
+      zm (em/make-zero d)
+      s1s (map (fn [{v :value id :id}] (let [j (dim-for-node id)] (assoc-in zm [j j] (:sigma-1 (meta v))))) messages)
+      mus (map (fn [{v :value id :id}] (let [j (dim-for-node id)] (assoc-in zv [0 j] (:mu (meta v))))) messages)
+      sigma (em/invert (apply + (cons s1 s1s)))
+      mu (* (apply + (map * (cons mu mus) (cons s1 s1s))) sigma)]
+     {:mu mu :sigma sigma})))
+
 (deftype NormalFactorNode
   [f id dim-for-node]
   sp/Messaging
   (>< [this messages to]
     (let [
           to-dim (dim-for-node to)
-          d (count dim-for-node)
-          mu (:mu (meta f))
-          s1 (:sigma-1 (meta f))
-          d (em/num-cols s1)
-          zv (em/make-zero 1 d)
-          zm (em/make-zero d)
-          s1s (map (fn [{v :value id :id}] (let [j (dim-for-node id)] (assoc-in zm [j j] (:sigma-1 (meta v))))) messages)
-          mus (map (fn [{v :value id :id}] (let [j (dim-for-node id)] (assoc-in zv [0 j] (:mu (meta v))))) messages)
-          sigma (em/invert (apply + (cons s1 s1s)))
-          mu (* (apply + (map * (cons mu mus) (cons s1 s1s))) sigma)
+          {:keys [mu sigma]} (product-of-normals f id dim-for-node messages to-dim)
           ;  p (multivariate-normal mu sigma)
           ; summing (integrating) over all variables except to
           ; is the same as the marginal of to (all the other variables are marginalized out)
@@ -133,6 +139,80 @@
   ([{:keys [graph id clm cpm dfn]}]
     (NormalFactorNode. (apply (if (number? (first cpm)) normal multivariate-normal) cpm) id dfn)))
 
+
+
+(deftype MaxNormalFactorNode
+  [f id dim-for-node]
+  Messaging
+  (>< [this messages to]
+    (let [
+          rsum (combine f m/add messages to dim-for-node)
+          mm (map m/emin rsum)
+          ]
+      {
+       :dim-for-node dim-for-node
+       :value mm
+       :min (indexed-min mm)
+       :sum rsum
+       :im (mapv (fn [[s c]] [s (zipmap (keys (dissoc dim-for-node to)) c)]) (map indexed-min rsum))
+       :repr (list 'min (cons '∑ (cons (:repr (i this)) (map :repr messages))))
+       }))
+  (<> [this messages to to-msg parent-msg]
+    (let [
+          conf (get-in parent-msg [:configuration id])
+          mind (zipmap (map :id messages) (range (count messages)))
+          to-conf (get conf to)
+          ]
+      {
+       :dim-for-node dim-for-node
+       :value        0
+       :mind					mind
+       :conf conf
+       :configuration (assoc (:configuration parent-msg) to to-conf)
+       }))
+  (i [this] {:value f :repr id :dim-for-node dim-for-node})
+  Passes
+  (pass? [this] true)
+  Factor
+  LogSpace
+  (p [this x] (m/emap P x)))
+
+(deftype MaxNormalVariableNode
+  [id]
+  Messaging
+  (>< [this messages to]
+    (let [sum (apply m/add (map :value messages))]
+      {
+       :value     sum
+       :repr      (cons '∑ (map :repr messages))
+       }))
+  (<> [this messages to to-msg parent-msg]
+    (let
+      [
+       ; to-msg is the msg received by this node from to on the >< pass,
+       ; which contains the indices of the other variables for each of this variable's states.
+       ; Here we are telling to its configuration and the configurations of all previous variables
+       ; In the outflowing messaging, the root variable node uses all its messages
+       sum (apply m/add (map :value (cons to-msg messages)))
+       min (indexed-min sum)
+       ; look up the configuration we got in the forward pass which lead to this minimum
+       ; (for the root - others need to use the indices they got from the parent)
+       conf (if parent-msg (get-in parent-msg [:configuration id]) (get-in min [1 0]))
+       configuration (if parent-msg (:configuration parent-msg) {id conf})
+       mto (get-in to-msg [:im conf 1])
+       ]
+      {
+       :value         sum
+       :min           min
+       :configuration (assoc configuration to mto)
+       :repr          (cons '∑ (map :repr messages))
+       }))
+  (i [this] {:value 0 :repr 0})
+  Variable
+  Passes
+  (pass? [this] false)
+  LogSpace
+  (p [this x] (m/emap P x)))
 
 
 

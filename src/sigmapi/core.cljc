@@ -209,13 +209,13 @@
      ]
     tm))
 
-(comment "
-	Returns a factor node for the max-sum algorithm,
-	for the given function f (a matrix), id and
-	map of node-id-to-dimensions.
-	This node operates in negative log space.
-	")
-(deftype MaxFactorNode
+
+(deftype
+  ^{:doc "Returns a factor node for the max-sum algorithm,
+          for the given function f (a matrix), id and
+          map of node-id-to-dimensions.
+          This node operates in negative log space."}
+  MaxFactorNode
   [f id dim-for-node]
   Messaging
   (>< [this messages to]
@@ -251,9 +251,10 @@
   LogSpace
   (p [this x] (m/emap P x)))
 
-(comment "Returns a variable node for the
-max-sum algorithm with the given id")
-(deftype MaxVariableNode
+(deftype
+  ^{:doc "Returns a variable node for the
+          max-sum algorithm with the given id"}
+  MaxVariableNode
   [id]
   Messaging
   (>< [this messages to]
