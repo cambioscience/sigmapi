@@ -72,6 +72,7 @@
   (>< [this messages to]
     (let [s1s (map (comp :sigma-1 meta :value) messages)
           mus (map (comp :mu meta :value) messages)
+          _ (println messages)
           s1+ (apply + s1s)
           sigma (if (== 0 s1+) s1+ (/ 1 s1+))
           mu (* sigma (apply + (map * s1s mus)))
@@ -90,43 +91,40 @@
   (pass? [this] false))
 
 (defn product-of-normals
-  ([f id dim-for-node messages to-dim]
+  ([{:keys [f id dim-for-node messages to-dim mu s1 zero-vector zero-matrix]}]
    (let
-     [d (count dim-for-node)
-      mu (:mu (meta f))
-      s1 (:sigma-1 (meta f))
-      d (em/num-cols s1)
-      zv (em/make-zero 1 d)
-      zm (em/make-zero d)
-      s1s (map (fn [{v :value id :id}] (let [j (dim-for-node id)] (assoc-in zm [j j] (:sigma-1 (meta v))))) messages)
-      mus (map (fn [{v :value id :id}] (let [j (dim-for-node id)] (assoc-in zv [0 j] (:mu (meta v))))) messages)
+     [s1s (map (fn [{v :value id :id}] (let [j (dim-for-node id)] (assoc-in zero-matrix [j j] (:sigma-1 (meta v))))) messages)
+      mus (map (fn [{v :value id :id}] (let [j (dim-for-node id)] (assoc-in zero-vector [0 j] (:mu (meta v))))) messages)
       sigma (em/invert (apply + (cons s1 s1s)))
       mu (* (apply + (map * (cons mu mus) (cons s1 s1s))) sigma)]
      {:mu mu :sigma sigma})))
 
+(defn summarize
+  "
+    summing (integrating) over all variables except to
+    is the same as the marginal of to (all the other variables are marginalized out)
+    https://statproofbook.github.io/P/mvn-marg.html
+  "
+  ([mu sigma to-dim]
+    (normal (em/get-in mu [0 to-dim]) (em/get-in sigma [to-dim to-dim]))))
+
 (deftype NormalFactorNode
-  [f id dim-for-node]
+  [init]
   sp/Messaging
   (>< [this messages to]
-    (let [
+    (let [{:keys [f id dim-for-node zero-vector zero-matrix d]} init
           to-dim (dim-for-node to)
-          {:keys [mu sigma]} (product-of-normals f id dim-for-node messages to-dim)
-          ;  p (multivariate-normal mu sigma)
-          ; summing (integrating) over all variables except to
-          ; is the same as the marginal of to (all the other variables are marginalized out)
-          ; https://statproofbook.github.io/P/mvn-marg.html
-          sigma' (em/get-in sigma [to-dim to-dim])
-          mu' (em/get-in mu [0 to-dim])
-          s (normal mu' sigma')
+          {:keys [mu sigma]} (product-of-normals (assoc init :to-dim to-dim :messages messages))
           ]
       {
-       :value     s
+       :value     (summarize mu sigma to-dim)
        :repr      (cons '∑ (list (cons '∏ (list (:repr (i this)) (if (== 1 (count messages)) (:repr (first messages)) (map :repr messages))))))
        }))
   (<> [this messages to to-msg parent-msg]
     (>< this messages to))
   (i [this]
-    {:value f :repr id :dim-for-node dim-for-node})
+    (let [{:keys [f id dim-for-node zero-vector zero-matrix d]} init]
+      {:value f :repr id :dim-for-node dim-for-node}))
   sp/Factor
   sp/Passes
   (pass? [this] true))
@@ -137,8 +135,16 @@
 
 (defmethod make-node [:sp/sp :sp/normal-factor]
   ([{:keys [graph id clm cpm dfn]}]
-    (NormalFactorNode. (apply (if (number? (first cpm)) normal multivariate-normal) cpm) id dfn)))
-
+   (let [f (apply (if (number? (first cpm)) normal multivariate-normal) cpm)
+         mu (:mu (meta f))
+         s1 (:sigma-1 (meta f))
+         d (if (number? s1) 0 (em/num-cols s1))
+         zv (em/make-zero 1 d)
+         zm (em/make-zero d)]
+       (NormalFactorNode.
+          {:f f :id id :dim-for-node dfn
+           :mu mu
+           :zero-vector zv :zero-matrix zm :d d :s1 s1}))))
 
 
 (deftype MaxNormalFactorNode
@@ -146,6 +152,8 @@
   Messaging
   (>< [this messages to]
     (let [
+          to-dim (dim-for-node to)
+          {:keys [mu sigma]} (product-of-normals f id dim-for-node messages to-dim)
           rsum (combine f m/add messages to dim-for-node)
           mm (map m/emin rsum)
           ]
@@ -324,7 +332,12 @@
       (map (fn [f] (map (juxt identity f) (range 0 1.25 0.25))))
       ))
 
+  (em/make-zero 0)
 
+  (let [t {:x 5 :y 7} im (with-meta t {`i (fn [this] this)})]
+    (i (assoc im :z 8)))
+
+  (-> (R. 4 5 6) (assoc :w 4))
 
   "
 
