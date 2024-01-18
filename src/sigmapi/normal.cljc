@@ -72,7 +72,6 @@
   (>< [this messages to]
     (let [s1s (map (comp :sigma-1 meta :value) messages)
           mus (map (comp :mu meta :value) messages)
-          _ (println messages)
           s1+ (apply + s1s)
           sigma (if (== 0 s1+) s1+ (/ 1 s1+))
           mu (* sigma (apply + (map * s1s mus)))
@@ -108,13 +107,12 @@
   ([mu sigma to-dim]
     (normal (em/get-in mu [0 to-dim]) (em/get-in sigma [to-dim to-dim]))))
 
-(deftype NormalFactorNode
-  [init]
+(defrecord NormalFactorNode
+  [f id dim-for-node]
   sp/Messaging
-  (>< [this messages to]
-    (let [{:keys [f id dim-for-node zero-vector zero-matrix d]} init
-          to-dim (dim-for-node to)
-          {:keys [mu sigma]} (product-of-normals (assoc init :to-dim to-dim :messages messages))
+  (>< [{:keys [f id dim-for-node zero-vector zero-matrix d] :as this} messages to]
+    (let [to-dim (dim-for-node to)
+          {:keys [mu sigma]} (product-of-normals (assoc this :to-dim to-dim :messages messages))
           ]
       {
        :value     (summarize mu sigma to-dim)
@@ -122,29 +120,34 @@
        }))
   (<> [this messages to to-msg parent-msg]
     (>< this messages to))
-  (i [this]
-    (let [{:keys [f id dim-for-node zero-vector zero-matrix d]} init]
-      {:value f :repr id :dim-for-node dim-for-node}))
+  (i [{:keys [f id dim-for-node zero-vector zero-matrix d]}]
+    {:value f :repr id :dim-for-node dim-for-node})
   sp/Factor
   sp/Passes
   (pass? [this] true))
 
-(defmethod make-node [:sp/sp :sp/normal-variable]
+(defmethod make-node [:sp/sp :sp/variable :sp/normal]
   ([{id :id}]
     (NormalVariableNode. id)))
 
-(defmethod make-node [:sp/sp :sp/normal-factor]
-  ([{:keys [graph id clm cpm dfn]}]
+(defmethod make-node [:sp/sp :sp/factor :sp/normal]
+  mnfn
+  ([{:keys [graph id clm cpm dfn] :as params}]
    (let [f (apply (if (number? (first cpm)) normal multivariate-normal) cpm)
-         mu (:mu (meta f))
+         node (NormalFactorNode. f id dfn)]
+     (mnfn node f params)))
+  ([node {:keys [graph id clm cpm dfn] :as params}]
+   (let [f (apply (if (number? (first cpm)) normal multivariate-normal) cpm)]
+     (mnfn (assoc node :f f) f params)))
+  ([{:keys [zero-vector zero-matrix d] :as node} f params]
+   (println "ufn:" node f)
+   (let [mu (:mu (meta f))
          s1 (:sigma-1 (meta f))
-         d (if (number? s1) 0 (em/num-cols s1))
-         zv (em/make-zero 1 d)
-         zm (em/make-zero d)]
-       (NormalFactorNode.
-          {:f f :id id :dim-for-node dfn
-           :mu mu
-           :zero-vector zv :zero-matrix zm :d d :s1 s1}))))
+         d (or d (if (number? s1) 0 (em/num-cols s1)))
+         zv (or zero-vector (em/make-zero 1 d))
+         zm (or zero-matrix (em/make-zero d))]
+     (assoc node
+       :mu mu :zero-vector zv :zero-matrix zm :d d :s1 s1))))
 
 
 (deftype MaxNormalFactorNode
@@ -334,10 +337,26 @@
 
   (em/make-zero 0)
 
-  (let [t {:x 5 :y 7} im (with-meta t {`i (fn [this] this)})]
-    (i (assoc im :z 8)))
+  (defprotocol Qq :extend-via-metadata true (q [this x]))
+
+  (ns arse)
+
+  *ns*
+
+  (defprotocol Wq :extend-via-metadata true (q [this]))
+
+
+  `normal/q
+
+  (let [t {:x 5 :y 7 :f (fn [x] (* 5 x))}
+        im (with-meta t {`q (fn [this x] ((:f this) x))})]
+    (q (dissoc im :f) 6))
 
   (-> (R. 4 5 6) (assoc :w 4))
+
+
+  (ns-unmap 'sigmapi.core 'make-node)
+  (ns-unmap 'sigmapi.normal 'make-node)
 
   "
 

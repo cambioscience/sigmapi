@@ -331,24 +331,25 @@
   (p [this x] (m/emap P x)))
 
 
-
+; rename to ensure-node as it now handles updates too
 (defmulti make-node
-  (fn [{:keys [alg type] :as p}]
-    [alg type]))
+  (fn
+    ([p] (mapv p [:alg :fg-type :node-type]))
+    ([node p] (mapv p [:alg :fg-type :node-type]))))
 
-(defmethod make-node [:sp/sp :sp/factor]
+(defmethod make-node [:sp/sp :sp/factor :sp/tensor]
   ([{:keys [graph id clm cpm dfn]}]
     (FactorNode. (or clm (m/emap ln- cpm)) id dfn)))
 
-(defmethod make-node [:sp/mxp :sp/factor]
+(defmethod make-node [:sp/map :sp/factor :sp/tensor]
   ([{:keys [graph id clm cpm dfn]}]
     (MaxFactorNode. (or clm (m/emap ln- cpm)) id dfn)))
 
-(defmethod make-node [:sp/sp :sp/variable]
+(defmethod make-node [:sp/sp :sp/variable :sp/tensor]
   ([{id :id}]
     (VariableNode. id)))
 
-(defmethod make-node [:sp/mxp :sp/variable]
+(defmethod make-node [:sp/map :sp/variable :sp/tensor]
   ([{id :id}]
     (MaxVariableNode. id)))
 
@@ -396,11 +397,11 @@
                        (map
                          (fn [id]
                            [id (if-let [mat (get-in nodes [id :matrix])]
-                                 (make-node {:alg alg :type :sp/normal-factor :graph g :id id
+                                 (make-node {:alg alg :fg-type :sp/factor :node-type :sp/normal :graph g :id id
                                              :cpm mat
                                              :dfn (zipmap (neighbours id) (range))
                                              :mfn (zipmap (neighbours id) (map #(get-in nodes [% :matrix]) (neighbours id)))})
-                                 (make-node {:alg alg :type :sp/normal-variable :id id}))])
+                                 (make-node {:alg alg  :fg-type :sp/variable :node-type :sp/normal :id id}))])
                          (lg/nodes g)))})))
 
 (defn graph->fg [alg {:keys [nodes edges] :as graph}]
@@ -420,7 +421,7 @@
      (fn [model [id mat]]
        (let [n (nodes id) {dfn :dim-for-node} (i n)]
          (assoc-in model [:nodes id]
-           (make-node {:alg alg :type :sp/normal-factor :graph g :id id cmkey mat :dfn dfn}))))
+           (make-node n {:alg alg :fg-type :sp/factor :node-type :sp/normal cmkey mat :dfn dfn}))))
       model matrices)))
 
 (defn change-alg
@@ -434,7 +435,7 @@
     (fn [model [id node]]
       (let [{dfn :dim-for-node v :value} (i node)]
         (assoc-in model [:nodes id]
-         (make-node {:alg   alg :type (if (satisfies? Variable node) :sp/variable :sp/factor)
+         (make-node {:alg   alg :fg-type (if (satisfies? Variable node) :sp/variable :sp/factor)
                      :graph g :id id :clm v :dfn dfn}))))
     (assoc model :messages {}) nodes))
 
