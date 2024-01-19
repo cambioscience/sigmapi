@@ -298,18 +298,27 @@
        {:fg
         (fgtree
           (:v [:pv [0.5 1]]
-            [:s|v [[0.5 0.5] [[0.5 0.7] [0.7 2]]]
+            [:s|s'&v [[0.5 0.5 0.5]
+                      [[1.0 0.5 0.2]
+                       [0.5 1.0 0.1]
+                       [0.2 0.5 1.0]]]
+              (:s' [:ps' [1/2 4]])
               (:s [:ps [1/2 4]])
              ]))
-        :priors {:v :pv :s :ps}}
+        :priors {:v :pv :s :ps :s' :ps'}}
      ]
   (->>
     (reductions
       (fn update-it [{{s :s} :marginals :as m} {v :pv :as data}]
         (let [p [(or (:mu (meta s)) 0.5) (or (:sigma (meta s)) 4)]]
-          (update-priors (assoc m :data (assoc data :ps p)))))
+          (update-priors (assoc m :data (assoc data :ps' p)))))
         model
-       (concat (repeat 8 {:pv [0 0.1]}) (repeat 8 {:pv [1 0.1]})))
+       (concat
+         (repeat 16 {:pv [0 0.1]})
+         (repeat 16 {:pv [1 0.1]})
+         ;(repeat 4 {:pv [0 0.1]})
+         ;(repeat 4 {:pv [1 0.1]})
+         ))
       (map (comp :s :marginals))
       rest
     ;(map (fn [f] (map (juxt identity f) (range 0 1.25 0.25))))
