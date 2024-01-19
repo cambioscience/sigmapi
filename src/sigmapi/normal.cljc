@@ -131,7 +131,7 @@
                  {:value f :repr id :dim-for-node dim-for-node})
             ; Updatable
             `updated
-              (fn [this {:keys [d cpm zero-vector zero-matrix]}]
+              (fn [this {:keys [cpm]}]
                 (assoc this :f (apply (if (number? (first cpm)) normal multivariate-normal) cpm)))
             })] node)))
 
@@ -295,26 +295,46 @@
 
 (let
     [model
-     {:fg
-      (fgtree
-        (:d [:pd [0.5 1]]
-          [:h|d
-           [[0.5 0.5] [[0.5 0.7] [0.7 2]]]
-           (:h [:ph [1/2 4]])
-           ]))
-      :priors
-      {:d :pd :h :ph}}
+       {:fg
+        (fgtree
+          (:v [:pv [0.5 1]]
+            [:s|v [[0.5 0.5] [[0.5 0.7] [0.7 2]]]
+              (:s [:ps [1/2 4]])
+             ]))
+        :priors {:v :pv :s :ps}}
      ]
   (->>
     (reductions
-      (fn update-it [{{h :h} :marginals :as m} {d :pd :as data}]
-         (update-priors (assoc m :data (assoc data :ph [0.5 4]))))
+      (fn update-it [{{s :s} :marginals :as m} {v :pv :as data}]
+        (let [p [(or (:mu (meta s)) 0.5) (or (:sigma (meta s)) 4)]]
+          (update-priors (assoc m :data (assoc data :ps p)))))
         model
-       (interleave (repeat 8 {:pd [0 0.1]}) (repeat 8 {:pd [1 0.1]})))
-      (map (comp :h :marginals))
+       (concat (repeat 8 {:pv [0 0.1]}) (repeat 8 {:pv [1 0.1]})))
+      (map (comp :s :marginals))
       rest
-      (map (fn [f] (map (juxt identity f) (range 0 1.25 0.25))))
+    ;(map (fn [f] (map (juxt identity f) (range 0 1.25 0.25))))
+      ((fn [sfs]
+         (let [n (count sfs) n1 (/ 1 n)]
+           (view
+            (xy-chart
+              (map-indexed
+                (fn [i f]
+                  [(str i)
+                   {:x (range 0 1 0.01)
+                    :y (map f (range 0 1 0.01))
+                    :style {:line-color (Color. ^float (* n1 i) 0.0 ^float (- 1.0 (* n1 i)) 0.5)
+                            :marker-type :none
+                            :line-style :solid}}]) sfs)
+              {:title "-"
+               :x-axis {:title "specificity"}
+               :y-axis {:title "p" :decimal-pattern "##.##"}
+               :theme :matlab})))))
       ))
+
+  (require '[com.hypirion.clj-xchart :as xc :refer [view xy-chart]])
+
+  (import '[java.awt Color])
+
 
   (em/make-zero 0)
 

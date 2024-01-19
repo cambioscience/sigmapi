@@ -128,6 +128,8 @@
   "
   TODO: need to check shape of graph and
   dimensionality of matrices
+
+  change CPM and CLM to params map ala hiccup
   "
   ([alg edges]
       (let [g (apply lg/graph (map (partial map :id) edges))
@@ -175,8 +177,8 @@
     (reduce
      (fn [model [id mat]]
        (let [n (nodes id) {dfn :dim-for-node} (i n)]
-         (update-in model [:nodes id]
-           updated {:alg alg :kind :factor :impl :normal cmkey mat :dfn dfn})))
+         (update-in model [:nodes id] updated
+           {cmkey mat})))
       model matrices)))
 
 (defn change-alg
