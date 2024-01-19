@@ -17,7 +17,7 @@
 (defn
   fg-test-graph-f7
   "Figure 7 in Frey2001 Factor graphs and the sum product algorithm"
-  ([] (fg-test-graph-f7 :sp/sp))
+  ([] (fg-test-graph-f7 :sp))
   ([alg] (fg-test-graph-f7 alg (lg/graph ['fa 'x1] ['fb 'x2] ['x1 'fc] ['x2 'fc] ['fc 'x3] ['x3 'fd] ['x3 'fe] ['fd 'x4] ['fe 'x5])))
   ([alg g]
    (fg-test-graph-f7 alg g {'x5 #{0 1} 'x2 #{0 1 2} 'x3 #{0 1 2 3} 'x4 #{0 1} 'x1 #{0 1}}))
@@ -27,16 +27,16 @@
     :messages {}
     :graph    g
     :nodes    {
-               'x1 (make-node {:alg alg :type :sp/variable :id 'x1})
-               'x2 (make-node {:alg alg :type :sp/variable :id 'x2})
-               'x3 (make-node {:alg alg :type :sp/variable :id 'x3})
-               'x4 (make-node {:alg alg :type :sp/variable :id 'x4})
-               'x5 (make-node {:alg alg :type :sp/variable :id 'x5})
-               'fa (make-node {:alg alg :type :sp/factor :graph g :id 'fa :cpm (m/matrix [0.25 0.75]) :dfn {'x1 0}})
-               'fb (make-node {:alg alg :type :sp/factor :graph g :id 'fb :cpm (m/matrix [0.19 0.9 0.452]) :dfn {'x2 0}})
-               'fc (make-node {:alg alg :type :sp/factor :graph g :id 'fc :cpm (random-matrix [2 3 4]) :dfn {'x1 0 'x2 1 'x3 2}})
-               'fd (make-node {:alg alg :type :sp/factor :graph g :id 'fd :cpm (random-matrix [4 2]) :dfn {'x3 0 'x4 1}})
-               'fe (make-node {:alg alg :type :sp/factor :graph g :id 'fe :cpm (random-matrix [4 2]) :dfn {'x3 0 'x5 1}})
+               'x1 (make-node {:alg alg :type :variable :id 'x1})
+               'x2 (make-node {:alg alg :type :variable :id 'x2})
+               'x3 (make-node {:alg alg :type :variable :id 'x3})
+               'x4 (make-node {:alg alg :type :variable :id 'x4})
+               'x5 (make-node {:alg alg :type :variable :id 'x5})
+               'fa (make-node {:alg alg :type :factor :graph g :id 'fa :cpm (m/matrix [0.25 0.75]) :dfn {'x1 0}})
+               'fb (make-node {:alg alg :type :factor :graph g :id 'fb :cpm (m/matrix [0.19 0.9 0.452]) :dfn {'x2 0}})
+               'fc (make-node {:alg alg :type :factor :graph g :id 'fc :cpm (random-matrix [2 3 4]) :dfn {'x1 0 'x2 1 'x3 2}})
+               'fd (make-node {:alg alg :type :factor :graph g :id 'fd :cpm (random-matrix [4 2]) :dfn {'x3 0 'x4 1}})
+               'fe (make-node {:alg alg :type :factor :graph g :id 'fe :cpm (random-matrix [4 2]) :dfn {'x3 0 'x5 1}})
                }}))
 
 (defn figure7
@@ -70,8 +70,8 @@
            ]
           (:x5)])])
 
-      :priors {:x1 :fa :x2 :fb}
-      }))
+    :priors {:x1 :fa :x2 :fb}
+    }))
 
 (defn test-cbt []
   (let
@@ -384,7 +384,7 @@
          r|y {:id :r|y :matrix [[1/3 2/3] [2/3 1/3]]}
         ]
     (->>
-     (edges->fg :sp/sp
+     (edges->fg :sp
        [
         [{:id :y} {:id :py, :matrix [1/2 1/2]}]
         [{:id :s} {:id :ps, :matrix [0 1]}]
@@ -438,7 +438,7 @@
            x| [0 1]
            z| [1 0]
          }}
-    (graph->fg :sp/sp)
+    (graph->fg :sp)
     ;:graph
     ;((fn [g] (lio/view g {:alg :neato :node-label name })))
     propagate
@@ -480,7 +480,7 @@
           z| [0.5 0.5]                                                             ; gender
          ;y| [1 0]                                                                 ; recovery
          }}
-    (graph->fg :sp/sp)
+    (graph->fg :sp)
     ;:graph
     ;((fn [g] (lio/view g {:alg :neato :node-label name })))
     (propagate-cycles 9)
@@ -513,7 +513,7 @@
           :states {:x [:drug :no-drug] :y [:didn't-recover :recovered] :z [:male :female]}
           :aliases {:x :drug :y :recovery :z :gender}}]
       (->> model
-       (graph->fg :sp/sp)
+       (graph->fg :sp)
        ;:graph
        ;((fn [g] (lio/view g {:alg :neato :node-label name })))
        (propagate-cycles 2)
@@ -573,7 +573,7 @@
         ;im (intervene model 'x|z 0.5)
         ]
     (->> intervened-model
-     (graph->fg :sp/sp)
+     (graph->fg :sp)
      ;:graph
      ;((fn [g] (lio/view g {:alg :neato :node-label name })))
      (propagate-cycles 8)
@@ -630,7 +630,7 @@
         ;im (intervene model 'x|z 0.5)
         ]
     (->> model
-     (graph->fg :sp/sp)
+     (graph->fg :sp)
       ;:graph
       ;((fn [g] (lio/view g {:alg :neato :node-label name })))
       (propagate-cycles 8)
@@ -680,7 +680,7 @@
             ])
         ]
     (->> model
-     (graph->fg :sp/sp)
+     (graph->fg :sp)
      ;:graph
      ;((fn [g] (lio/view g {:alg :neato :node-label name })))
      (propagate-cycles 8)

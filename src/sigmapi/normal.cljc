@@ -67,28 +67,6 @@
              (sqrt (* (expt (* 2 PI) k) det-sigma)))))
        {:mu mu :sigma sigma :sigma-1 sigma-1})))
 
-(deftype NormalVariableNode [id]
-  sp/Messaging
-  (>< [this messages to]
-    (let [s1s (map (comp :sigma-1 meta :value) messages)
-          mus (map (comp :mu meta :value) messages)
-          s1+ (apply + s1s)
-          sigma (if (== 0 s1+) s1+ (/ 1 s1+))
-          mu (* sigma (apply + (map * s1s mus)))
-          ]
-      {
-      :value (normal mu sigma)
-      :repr (if (== 1 (count messages)) (:repr (first messages)) (cons '∏ (map :repr messages)))
-      }))
-  (<> [this messages to to-msg parent-msg]
-    ;(print "  v<>" id)
-    (>< this messages to))
-  (i [this]
-    {:value (with-meta (fn identity [x] (em/by-rows [1])) {:mu 0 :sigma 1 :sigma-1 1}) :repr id})
-  sp/Variable
-  sp/Passes
-  (pass? [this] false))
-
 (defn product-of-normals
   ([{:keys [f id dim-for-node messages to-dim mu s1 zero-vector zero-matrix]}]
    (let
@@ -107,40 +85,53 @@
   ([mu sigma to-dim]
     (normal (em/get-in mu [0 to-dim]) (em/get-in sigma [to-dim to-dim]))))
 
-(defrecord NormalFactorNode
-  [f id dim-for-node]
-  sp/Messaging
-  (>< [{:keys [f id dim-for-node zero-vector zero-matrix d] :as this} messages to]
-    (let [to-dim (dim-for-node to)
-          {:keys [mu sigma]} (product-of-normals (assoc this :to-dim to-dim :messages messages))
-          ]
-      {
-       :value     (summarize mu sigma to-dim)
-       :repr      (cons '∑ (list (cons '∏ (list (:repr (i this)) (if (== 1 (count messages)) (:repr (first messages)) (map :repr messages))))))
-       }))
-  (<> [this messages to to-msg parent-msg]
-    (>< this messages to))
-  (i [{:keys [f id dim-for-node zero-vector zero-matrix d]}]
-    {:value f :repr id :dim-for-node dim-for-node})
-  sp/Factor
-  sp/Passes
-  (pass? [this] true))
+(defmethod make-node [:sp :variable :normal]
+  ([{:keys [id] :as node}]
+   (with-meta node
+     {; Messaging
+     `><
+      (fn [this messages to]
+       (let [s1s (map (comp :sigma-1 meta :value) messages)
+             mus (map (comp :mu meta :value) messages)
+             s1+ (apply + s1s)
+             sigma (if (== 0 s1+) s1+ (/ 1 s1+))
+             mu (* sigma (apply + (map * s1s mus)))
+             ]
+         {
+          :value (normal mu sigma)
+          :repr (if (== 1 (count messages)) (:repr (first messages)) (cons '∏ (map :repr messages)))
+          }))
+     `<> (fn [this messages to to-msg parent-msg] (>< this messages to))
+     `i
+      (fn [this]
+       {:value (with-meta (fn identity [x] (em/by-rows [1])) {:mu 0 :sigma 1 :sigma-1 1}) :repr id})})))
 
-(defmethod make-node [:sp/sp :sp/variable :sp/normal]
-  ([{id :id}]
-    (NormalVariableNode. id)))
-
-(defmethod make-node [:sp/sp :sp/factor :sp/normal]
+(defmethod make-node [:sp :factor :normal]
   mnfn
   ([{:keys [graph id clm cpm dfn] :as params}]
    (let [f (apply (if (number? (first cpm)) normal multivariate-normal) cpm)
-         node (NormalFactorNode. f id dfn)]
+         node
+         (with-meta {:f f :id id :dim-for-node dfn :kind :factor :features #{:passes}}
+           { ; sp/Messaging
+            `><
+            (fn [{:keys [f id dim-for-node zero-vector zero-matrix d] :as this} messages to]
+              (let [to-dim (dim-for-node to)
+                    {:keys [mu sigma]} (product-of-normals (assoc this :to-dim to-dim :messages messages))
+                    ]
+                {
+                 :value (summarize mu sigma to-dim)
+                 :repr (cons '∑ (list (cons '∏ (list (:repr (i this)) (if (== 1 (count messages)) (:repr (first messages)) (map :repr messages))))))
+                 }))
+            `<> (fn [this messages to to-msg parent-msg] (>< this messages to))
+            `i (fn [{:keys [f id dim-for-node zero-vector zero-matrix d]}]
+                 {:value f :repr id :dim-for-node dim-for-node})
+            })]
      (mnfn node f params)))
   ([node {:keys [graph id clm cpm dfn] :as params}]
    (let [f (apply (if (number? (first cpm)) normal multivariate-normal) cpm)]
      (mnfn (assoc node :f f) f params)))
   ([{:keys [zero-vector zero-matrix d] :as node} f params]
-   (println "ufn:" node f)
+   ;(println "ufn:" node f)
    (let [mu (:mu (meta f))
          s1 (:sigma-1 (meta f))
          d (or d (if (number? s1) 0 (em/num-cols s1)))
@@ -182,9 +173,6 @@
        :configuration (assoc (:configuration parent-msg) to to-conf)
        }))
   (i [this] {:value f :repr id :dim-for-node dim-for-node})
-  Passes
-  (pass? [this] true)
-  Factor
   LogSpace
   (p [this x] (m/emap P x)))
 
@@ -220,8 +208,6 @@
        }))
   (i [this] {:value 0 :repr 0})
   Variable
-  Passes
-  (pass? [this] false)
   LogSpace
   (p [this x] (m/emap P x)))
 
@@ -308,7 +294,7 @@
     [0.5 0.6 0.9]
    ]
 
-
+(require '[criterium.core :as c])
 
 (print-cause-trace *e)
 
@@ -339,20 +325,33 @@
 
   (defprotocol Qq :extend-via-metadata true (q [this x]))
 
-  (ns arse)
+  (defprotocol Rq (r [this x]))
 
-  *ns*
+  (defrecord R [t]
+    Rq (r [t x] (* 5 x)))
 
-  (defprotocol Wq :extend-via-metadata true (q [this]))
-
-
-  `normal/q
+  (deftype RR [] Rq (r [t x] (* 5 x)))
 
   (let [t {:x 5 :y 7 :f (fn [x] (* 5 x))}
         im (with-meta t {`q (fn [this x] ((:f this) x))})]
-    (q (dissoc im :f) 6))
+    (c/quick-bench (q im 6)))
+
+  (def t1 {:x 5 :y 7 :f (fn [x] (* 5 x))})
+  (def im (with-meta t1 {`q (fn [this x] ((:f this) x))}))
+
+  (c/quick-bench (q im 6))
+
+  (let [t (R. 8)]
+    (c/quick-bench (r t 6)))
+
+  (let [t (RR.)]
+    (c/quick-bench (r t 6)))
 
   (-> (R. 4 5 6) (assoc :w 4))
+
+  (:x :y)
+
+  Rq
 
 
   (ns-unmap 'sigmapi.core 'make-node)

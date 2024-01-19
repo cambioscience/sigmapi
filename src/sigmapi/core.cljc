@@ -97,7 +97,7 @@
     messages into one.
   ")
 
-(defprotocol Messaging
+(defprotocol Messaging :extend-via-metadata true
   "
 
     Messaging
@@ -118,17 +118,7 @@
   (<> [this messages to to-msg parent])
   (i [this]))
 
-; Variable nodes
-(defprotocol Variable)
-
-; Factor nodes
-(defprotocol Factor)
-
-; (Factor) nodes that pass when given the opportunity to be root
-(defprotocol Passes
-  (pass? [this]))
-
-(defprotocol LogSpace
+(defprotocol LogSpace :extend-via-metadata true
   "Return a probability for x"
   (p [this x]))
 
@@ -209,149 +199,130 @@
      ]
     tm))
 
-
-(deftype
-  ^{:doc "Returns a factor node for the max-sum algorithm,
-          for the given function f (a matrix), id and
-          map of node-id-to-dimensions.
-          This node operates in negative log space."}
-  MaxFactorNode
-  [f id dim-for-node]
-  Messaging
-  (>< [this messages to]
-    (let [
-          rsum (combine f m/add messages to dim-for-node)
-          mm (map m/emin rsum)
-          ]
-      {
-       :dim-for-node dim-for-node
-       :value mm
-       :min (indexed-min mm)
-       :sum rsum
-       :im (mapv (fn [[s c]] [s (zipmap (keys (dissoc dim-for-node to)) c)]) (map indexed-min rsum))
-       :repr (list 'min (cons '∑ (cons (:repr (i this)) (map :repr messages))))
-       }))
-  (<> [this messages to to-msg parent-msg]
-    (let [
-          conf (get-in parent-msg [:configuration id])
-          mind (zipmap (map :id messages) (range (count messages)))
-          to-conf (get conf to)
-          ]
-      {
-       :dim-for-node dim-for-node
-       :value        0
-       :mind					mind
-       :conf conf
-       :configuration (assoc (:configuration parent-msg) to to-conf)
-       }))
-  (i [this] {:value f :repr id :dim-for-node dim-for-node})
-  Passes
-  (pass? [this] true)
-  Factor
-  LogSpace
-  (p [this x] (m/emap P x)))
-
-(deftype
-  ^{:doc "Returns a variable node for the
-          max-sum algorithm with the given id"}
-  MaxVariableNode
-  [id]
-  Messaging
-  (>< [this messages to]
-    (let [sum (apply m/add (map :value messages))]
-      {
-       :value     sum
-       :repr      (cons '∑ (map :repr messages))
-       }))
-  (<> [this messages to to-msg parent-msg]
-    (let
-      [
-       ; to-msg is the msg received by this node from to on the >< pass,
-       ; which contains the indices of the other variables for each of this variable's states.
-       ; Here we are telling to its configuration and the configurations of all previous variables
-       ; In the outflowing messaging, the root variable node uses all its messages
-       sum (apply m/add (map :value (cons to-msg messages)))
-       min (indexed-min sum)
-       ; look up the configuration we got in the forward pass which lead to this minimum
-       ; (for the root - others need to use the indices they got from the parent)
-       conf (if parent-msg (get-in parent-msg [:configuration id]) (get-in min [1 0]))
-       configuration (if parent-msg (:configuration parent-msg) {id conf})
-       mto (get-in to-msg [:im conf 1])
-       ]
-      {
-       :value         sum
-       :min           min
-       :configuration (assoc configuration to mto)
-       :repr          (cons '∑ (map :repr messages))
-       }))
-  (i [this] {:value 0 :repr 0})
-  Variable
-  Passes
-  (pass? [this] false)
-  LogSpace
-  (p [this x] (m/emap P x)))
-
-(deftype FactorNode
-  [f id dim-for-node]
-  Messaging
-  (>< [this messages to]
-    (let [
-          prod (combine f m/add messages to dim-for-node)
-          sum (m/emap ln- (map m/esum (m/emap P prod)))
-          ]
-      {
-       :value     sum
-       :repr      (cons '∑ (list (cons '∏ (list (:repr (i this)) (if (== 1 (count messages)) (:repr (first messages)) (map :repr messages))))))
-       }))
-  (<> [this messages to to-msg parent-msg]
-    (>< this messages to))
-  (i [this]
-    {:value f :repr id :dim-for-node dim-for-node})
-  Factor
-  Passes
-  (pass? [this] true)
-  LogSpace
-  (p [this x] (m/emap P x)))
-
-(deftype VariableNode [id]
-  Messaging
-  (>< [this messages to]
-    {
-     :value     (apply m/add (map :value messages))
-     :repr      (if (== 1 (count messages)) (:repr (first messages)) (cons '∏ (map :repr messages)))
-     })
-  (<> [this messages to to-msg parent-msg]
-    (>< this messages to))
-  (i [this]
-    {:value 0 :repr id})
-  Variable
-  Passes
-  (pass? [this] false)
-  LogSpace
-  (p [this x] (m/emap P x)))
-
-
 ; rename to ensure-node as it now handles updates too
 (defmulti make-node
   (fn
-    ([p] (mapv p [:alg :fg-type :node-type]))
-    ([node p] (mapv p [:alg :fg-type :node-type]))))
+    ([p] (mapv p [:alg :kind :impl]))
+    ([node p] (mapv p [:alg :kind :impl]))))
 
-(defmethod make-node [:sp/sp :sp/factor :sp/tensor]
-  ([{:keys [graph id clm cpm dfn]}]
-    (FactorNode. (or clm (m/emap ln- cpm)) id dfn)))
+(defmethod make-node [:MAP :factor :tensor]
+  ([{:keys [clm cpm] :as node}]
+   (let [node (-> node
+                (assoc :f (or clm (m/emap ln- cpm)) :kind :factor)
+                (update :features conj :passes))]
+     (with-meta node
+       {
+        ; Messaging
+        `><
+        (fn [{:keys [f id dim-for-node] :as this} messages to]
+          (let [
+                rsum (combine f m/add messages to dim-for-node)
+                mm (map m/emin rsum)
+                ]
+            {
+             :dim-for-node dim-for-node
+             :value mm
+             :min (indexed-min mm)
+             :sum rsum
+             :im (mapv (fn [[s c]] [s (zipmap (keys (dissoc dim-for-node to)) c)]) (map indexed-min rsum))
+             :repr (list 'min (cons '∑ (cons (:repr (i this)) (map :repr messages))))
+             }))
+        `<>
+        (fn [{:keys [f id dim-for-node] :as this} messages to to-msg parent-msg]
+          (let [
+                conf (get-in parent-msg [:configuration id])
+                mind (zipmap (map :id messages) (range (count messages)))
+                to-conf (get conf to)
+                ]
+            {
+             :dim-for-node dim-for-node
+             :value 0
+             :mind mind
+             :conf conf
+             :configuration (assoc (:configuration parent-msg) to to-conf)
+             }))
+        `i (fn [{:keys [f id dim-for-node] :as this}] {:value f :repr id :dim-for-node dim-for-node})
+        ; LogSpace
+        `p (fn [this x] (m/emap P x))}))))
 
-(defmethod make-node [:sp/map :sp/factor :sp/tensor]
-  ([{:keys [graph id clm cpm dfn]}]
-    (MaxFactorNode. (or clm (m/emap ln- cpm)) id dfn)))
+(defmethod make-node [:MAP :variable :tensor]
+  ([{:keys [id] :as node}]
+  (with-meta (assoc node :kind :variable)
+    {; Messaging
+      `><
+      (fn [this messages to]
+        (let [sum (apply m/add (map :value messages))]
+          {
+           :value sum
+           :repr (cons '∑ (map :repr messages))
+           }))
+      `<>
+      (fn [this messages to to-msg parent-msg]
+        (let
+          [
+           ; to-msg is the msg received by this node from to on the >< pass,
+           ; which contains the indices of the other variables for each of this variable's states.
+           ; Here we are telling to its configuration and the configurations of all previous variables
+           ; In the outflowing messaging, the root variable node uses all its messages
+           sum (apply m/add (map :value (cons to-msg messages)))
+           min (indexed-min sum)
+           ; look up the configuration we got in the forward pass which lead to this minimum
+           ; (for the root - others need to use the indices they got from the parent)
+           conf (if parent-msg (get-in parent-msg [:configuration id]) (get-in min [1 0]))
+           configuration (if parent-msg (:configuration parent-msg) {id conf})
+           mto (get-in to-msg [:im conf 1])
+           ]
+          {
+           :value sum
+           :min min
+           :configuration (assoc configuration to mto)
+           :repr (cons '∑ (map :repr messages))
+           }))
+      `i (fn [this] {:value 0 :repr 0})
+      ; LogSpace
+      `p (fn [this x] (m/emap P x))})))
 
-(defmethod make-node [:sp/sp :sp/variable :sp/tensor]
-  ([{id :id}]
-    (VariableNode. id)))
+(defmethod make-node [:sp :factor :tensor]
+  ([node]
+   (with-meta (-> node
+                (assoc :kind :factor)
+                (update node :features conj :passes))
+     {; Messaging
+       `><
+       (fn [{:keys [f id dim-for-node] :as this} messages to]
+         (let [
+               prod (combine f m/add messages to dim-for-node)
+               sum (m/emap ln- (map m/esum (m/emap P prod)))
+               ]
+           {
+            :value sum
+            :repr (cons '∑ (list (cons '∏ (list (:repr (i this)) (if (== 1 (count messages)) (:repr (first messages)) (map :repr messages))))))
+            }))
+       `<>
+       (fn [this messages to to-msg parent-msg]
+         (>< this messages to))
+       `i
+       (fn [{:keys [f id dim-for-node]}]
+         {:value f :repr id :dim-for-node dim-for-node})
+       ; LogSpace
+       `p (fn [this x] (m/emap P x))})))
 
-(defmethod make-node [:sp/map :sp/variable :sp/tensor]
-  ([{id :id}]
-    (MaxVariableNode. id)))
+(defmethod make-node [:sp :variable :tensor]
+  ([node]
+   (with-meta (assoc node :kind :variable)
+     {; Messaging
+       `><
+        (fn [this messages to]
+           {
+            :value (apply m/add (map :value messages))
+            :repr (if (== 1 (count messages)) (:repr (first messages)) (cons '∏ (map :repr messages)))
+            })
+       `<>
+        (fn [this messages to to-msg parent-msg]
+           (>< this messages to))
+       `i (fn [{id :id}] {:value 0 :repr id})
+       ; LogSpace
+       `p (fn [this x] (m/emap P x))})))
 
 (defn neighbourz [edges]
   (reduce
@@ -397,11 +368,11 @@
                        (map
                          (fn [id]
                            [id (if-let [mat (get-in nodes [id :matrix])]
-                                 (make-node {:alg alg :fg-type :sp/factor :node-type :sp/normal :graph g :id id
+                                 (make-node {:alg alg :kind :factor :impl :normal :graph g :id id
                                              :cpm mat
                                              :dfn (zipmap (neighbours id) (range))
                                              :mfn (zipmap (neighbours id) (map #(get-in nodes [% :matrix]) (neighbours id)))})
-                                 (make-node {:alg alg  :fg-type :sp/variable :node-type :sp/normal :id id}))])
+                                 (make-node {:alg alg  :kind :variable :impl :normal :id id}))])
                          (lg/nodes g)))})))
 
 (defn graph->fg [alg {:keys [nodes edges] :as graph}]
@@ -421,7 +392,7 @@
      (fn [model [id mat]]
        (let [n (nodes id) {dfn :dim-for-node} (i n)]
          (assoc-in model [:nodes id]
-           (make-node n {:alg alg :fg-type :sp/factor :node-type :sp/normal cmkey mat :dfn dfn}))))
+           (make-node n {:alg alg :kind :factor :impl :normal cmkey mat :dfn dfn}))))
       model matrices)))
 
 (defn change-alg
@@ -435,7 +406,7 @@
     (fn [model [id node]]
       (let [{dfn :dim-for-node v :value} (i node)]
         (assoc-in model [:nodes id]
-         (make-node {:alg   alg :fg-type (if (satisfies? Variable node) :sp/variable :sp/factor)
+         (make-node {:alg   alg :kind (:kind node)
                      :graph g :id id :clm v :dfn dfn}))))
     (assoc model :messages {}) nodes))
 
@@ -465,7 +436,7 @@
 (defn prior-nodes [{:keys [graph nodes] :as model}]
   (into {} (map (fn [id] [id (nodes id)]) (filter
                                     (fn [n]
-                                      (and (leaf? graph n) (satisfies? Factor (nodes n))))
+                                      (and (leaf? graph n) (= :factor (:kind (nodes n)))))
                                     (lg/nodes graph)))))
 
 (defn msgs-from-leaves [{:keys [messages graph nodes leaves] :as model}]
@@ -485,7 +456,7 @@
           (assoc (i (get nodes id))
             :id id :flow :><))))
     model
-    (filter (comp (fn [n] (satisfies? Variable n)) nodes)
+    (filter (comp (fn [n] (= :variable (:kind n))) nodes)
       (lg/nodes graph))))
 
 (comment
@@ -565,7 +536,8 @@
   [previous-model {:keys [messages graph nodes] :as model}]
   (reduce
     (fn [{root? :root :as r} [id msgs]]
-      (let [prev-msgs (get-in previous-model [:messages id]) node (get nodes id)]
+      (let [prev-msgs (get-in previous-model [:messages id])
+            {:keys [features] :as node} (get nodes id)]
         (cond
           ; messages have arrived on all but one of the edges incident on v
           (and (not= msgs prev-msgs) (== (count msgs) (dec (lg/out-degree graph id))))
@@ -579,7 +551,7 @@
               (let [[return _] (first (set/difference
                                         (into #{} (map (juxt :id :flow) (vals msgs)))
                                         (into #{} (map (juxt :id :flow) (vals prev-msgs)))))]
-                (if (and (pass? node) (= :>< (get-in msgs [return :flow])))
+                (if (and (:passes features) (= :>< (get-in msgs [return :flow])))
                   (if root? r (update-in r [:messages id] dissoc return))
                   (reduce
                     (fn [r parent]
@@ -669,9 +641,9 @@
   [{:keys [messages graph nodes] :as model}]
   (into {}
     (map
-      (fn [[id node]]
+      (fn [[id {:keys [features] :as node}]]
         [id (:value (<> node (vals (get messages id)) nil nil nil))])
-      (filter (comp (fn [n] (satisfies? Variable n)) val) nodes))))
+      (filter (comp #{:variable} :kind val) nodes))))
 
 (def marginals
   (comp normalize-vals unnormalized-marginals))
@@ -689,7 +661,7 @@
       (zipmap
         (map key
              (filter
-               (comp (fn [n] (satisfies? Variable n)) val)
+               (comp #{:variable} :kind val)
                (:nodes (first models))))
         (repeat [])) (map unnormalized-marginals models)))
 
@@ -715,7 +687,7 @@
 
 (defn compute-marginals [exp]
   (normalize-vals
-    (unnormalized-marginals (propagate (exp->fg :sp/sp exp)))))
+    (unnormalized-marginals (propagate (exp->fg :sp exp)))))
 
 (defn compute-MAP-config [exp]
   (MAP-config
@@ -748,7 +720,7 @@
   (let [[g m]
           (last
            (update-variables
-             (or updated (exp->fg :sp/sp fg)) marginals priors data))]
+             (or updated (exp->fg :sp fg)) marginals priors data))]
     (-> model
       (assoc :marginals m)
       (assoc :updated g))))
@@ -756,7 +728,7 @@
 (defn update-priors
   [{:keys [fg updated marginals priors data] :as model}]
       (let [
-             {nodes :nodes :as graph} (or updated (exp->fg :sp/sp fg))
+             {nodes :nodes :as graph} (or updated (exp->fg :sp fg))
               post (or marginals (zipmap (keys priors) (map (comp :value i nodes) (map (fn [v] (if (keyword? v) v (last v))) (vals priors)))))
               p2 (select-keys post (keys priors))
               p1 (merge (zipmap (map (fn [v] (if (keyword? v) v (first v))) (vals priors)) (map (comp (juxt :mu :sigma) meta p2) (keys priors))) data)
