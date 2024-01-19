@@ -100,11 +100,10 @@
   "Return a probability for x"
   (p [this x]))
 
-; rename to ensure-node as it now handles updates too
-(defmulti make-node
-  (fn
-    ([p] (mapv p [:alg :kind :impl]))
-    ([node p] (mapv p [:alg :kind :impl]))))
+(defprotocol Updatable :extend-via-metadata true
+  (updated [this x]))
+
+(defmulti make-node (fn ([p] (mapv p (:make-with p)))))
 
 (defn neighbourz [edges]
   (reduce
@@ -149,11 +148,15 @@
                        (map
                          (fn [id]
                            [id (if-let [mat (get-in nodes [id :matrix])]
-                                 (make-node {:alg alg :kind :factor :impl :normal :graph g :id id
+                                 (make-node {:alg alg
+                                             :make-with [:alg :kind :impl]
+                                             :kind :factor :impl :normal :graph g :id id
                                              :cpm mat
                                              :dfn (zipmap (neighbours id) (range))
                                              :mfn (zipmap (neighbours id) (map #(get-in nodes [% :matrix]) (neighbours id)))})
-                                 (make-node {:alg alg  :kind :variable :impl :normal :id id}))])
+                                 (make-node {:alg alg
+                                             :make-with [:alg :kind :impl]
+                                             :kind :variable :impl :normal :id id}))])
                          (lg/nodes g)))})))
 
 (defn graph->fg [alg {:keys [nodes edges] :as graph}]
@@ -172,8 +175,8 @@
     (reduce
      (fn [model [id mat]]
        (let [n (nodes id) {dfn :dim-for-node} (i n)]
-         (assoc-in model [:nodes id]
-           (make-node n {:alg alg :kind :factor :impl :normal cmkey mat :dfn dfn}))))
+         (update-in model [:nodes id]
+           updated {:alg alg :kind :factor :impl :normal cmkey mat :dfn dfn})))
       model matrices)))
 
 (defn change-alg

@@ -68,12 +68,12 @@
        {:mu mu :sigma sigma :sigma-1 sigma-1})))
 
 (defn product-of-normals
-  ([{:keys [f id dim-for-node messages to-dim mu s1 zero-vector zero-matrix]}]
+  ([{:keys [f id dim-for-node messages to-dim zero-vector zero-matrix]}]
    (let
      [s1s (map (fn [{v :value id :id}] (let [j (dim-for-node id)] (assoc-in zero-matrix [j j] (:sigma-1 (meta v))))) messages)
       mus (map (fn [{v :value id :id}] (let [j (dim-for-node id)] (assoc-in zero-vector [0 j] (:mu (meta v))))) messages)
-      sigma (em/invert (apply + (cons s1 s1s)))
-      mu (* (apply + (map * (cons mu mus) (cons s1 s1s))) sigma)]
+      sigma (em/invert (apply + (cons (:sigma-1 (meta f)) s1s)))
+      mu (* (apply + (map * (cons (:mu (meta f)) mus) (cons (:sigma-1 (meta f)) s1s))) sigma)]
      {:mu mu :sigma sigma})))
 
 (defn summarize
@@ -107,11 +107,15 @@
        {:value (with-meta (fn identity [x] (em/by-rows [1])) {:mu 0 :sigma 1 :sigma-1 1}) :repr id})})))
 
 (defmethod make-node [:sp :factor :normal]
-  mnfn
   ([{:keys [graph id clm cpm dfn] :as params}]
    (let [f (apply (if (number? (first cpm)) normal multivariate-normal) cpm)
+         s1 (:sigma-1 (meta f))
+         d  (if (number? s1) 0 (em/num-cols s1))
+         zv (em/make-zero 1 d)
+         zm (em/make-zero d)
          node
-         (with-meta {:f f :id id :dim-for-node dfn :kind :factor :features #{:passes}}
+         (with-meta {:f f :id id :dim-for-node dfn :kind :factor :features #{:passes}
+                     :zero-vector zv :zero-matrix zm :d d}
            { ; sp/Messaging
             `><
             (fn [{:keys [f id dim-for-node zero-vector zero-matrix d] :as this} messages to]
@@ -125,46 +129,37 @@
             `<> (fn [this messages to to-msg parent-msg] (>< this messages to))
             `i (fn [{:keys [f id dim-for-node zero-vector zero-matrix d]}]
                  {:value f :repr id :dim-for-node dim-for-node})
-            })]
-     (mnfn node f params)))
-  ([node {:keys [graph id clm cpm dfn] :as params}]
-   (let [f (apply (if (number? (first cpm)) normal multivariate-normal) cpm)]
-     (mnfn (assoc node :f f) f params)))
-  ([{:keys [zero-vector zero-matrix d] :as node} f params]
-   ;(println "ufn:" node f)
-   (let [mu (:mu (meta f))
-         s1 (:sigma-1 (meta f))
-         d (or d (if (number? s1) 0 (em/num-cols s1)))
-         zv (or zero-vector (em/make-zero 1 d))
-         zm (or zero-matrix (em/make-zero d))]
-     (assoc node
-       :mu mu :zero-vector zv :zero-matrix zm :d d :s1 s1))))
+            ; Updatable
+            `updated
+              (fn [this {:keys [d cpm zero-vector zero-matrix]}]
+                (assoc this :f (apply (if (number? (first cpm)) normal multivariate-normal) cpm)))
+            })] node)))
 
 (comment
- (deftype MaxNormalFactorNode
-   [f id dim-for-node]
-   Messaging
-   (>< [this messages to]
-     (let [
-           to-dim (dim-for-node to)
-           {:keys [mu sigma]} (product-of-normals f id dim-for-node messages to-dim)
-           rsum (combine f m/add messages to dim-for-node)
-           mm (map m/emin rsum)
-           ]
-       {
-        :dim-for-node dim-for-node
-        :value mm
-        :min (indexed-min mm)
-        :sum rsum
-        :im (mapv (fn [[s c]] [s (zipmap (keys (dissoc dim-for-node to)) c)]) (map indexed-min rsum))
-        :repr (list 'min (cons '∑ (cons (:repr (i this)) (map :repr messages))))
-        }))
-   (<> [this messages to to-msg parent-msg]
-     (let [
-           conf (get-in parent-msg [:configuration id])
-           mind (zipmap (map :id messages) (range (count messages)))
-           to-conf (get conf to)
-           ]
+  (deftype MaxNormalFactorNode
+    [f id dim-for-node]
+    Messaging
+    (>< [this messages to]
+      (let [
+            to-dim (dim-for-node to)
+            {:keys [mu sigma]} (product-of-normals f id dim-for-node messages to-dim)
+            rsum (combine f m/add messages to dim-for-node)
+            mm (map m/emin rsum)
+            ]
+        {
+         :dim-for-node dim-for-node
+         :value mm
+         :min (indexed-min mm)
+         :sum rsum
+         :im (mapv (fn [[s c]] [s (zipmap (keys (dissoc dim-for-node to)) c)]) (map indexed-min rsum))
+         :repr (list 'min (cons '∑ (cons (:repr (i this)) (map :repr messages))))
+         }))
+    (<> [this messages to to-msg parent-msg]
+      (let [
+            conf (get-in parent-msg [:configuration id])
+            mind (zipmap (map :id messages) (range (count messages)))
+            to-conf (get conf to)
+            ]
        {
         :dim-for-node dim-for-node
         :value 0
