@@ -11,5 +11,7 @@ pom.xml.asc
 .hgignore
 .hg/
 .idea/
+.cpcache
+/results
 *.iml
 .DS_Store
