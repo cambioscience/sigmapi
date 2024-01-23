@@ -15,6 +15,7 @@
      :extra-deps
      {
       com.hypirion/clj-xchart {:mvn/version "0.2.0"}
+      cljplot/cljplot {:mvn/version "0.0.3"}
       kixi/stats {:mvn/version "0.5.5"}
       }
      }
@@ -25,5 +26,5 @@
      obrizum/sigmapi {:git/url "https://github.com/cambioscience/sigmapi.git" :sha "dadaead75c73157e756512191b78fd926dc97791"}
      }
     }
-  }
-}
+   }
+ }

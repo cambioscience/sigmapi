@@ -59,8 +59,8 @@
      (with-meta
        (fn [x]
          (let [k (count x)
-               x (apply em/column x)
-               x-mu (- x mu)
+               x (apply em/row x)
+               x-mu (em/transpose (- x mu))
                det-sigma (em/determinant sigma)]
            (/
              (exp (get-in (* -1/2 (em/transpose x-mu) sigma-1 x-mu) [0 0]))
@@ -133,6 +133,53 @@
             `updated
               (fn [this {:keys [cpm]}]
                 (assoc this :f (apply (if (number? (first cpm)) normal multivariate-normal) cpm)))
+            })] node)))
+
+(defmethod make-node [:map :factor :normal]
+  ([{:keys [graph id clm cpm dfn] :as params}]
+   (let [f (apply (if (number? (first cpm)) normal multivariate-normal) cpm)
+         s1 (:sigma-1 (meta f))
+         d  (if (number? s1) 0 (em/num-cols s1))
+         zv (em/make-zero 1 d)
+         zm (em/make-zero d)
+         node
+         (with-meta {:f f :id id :dim-for-node dfn :kind :factor :features #{:passes}
+                     :zero-vector zv :zero-matrix zm :d d}
+           { ; sp/Messaging
+            `><
+            (fn [{:keys [f id dim-for-node zero-vector zero-matrix d] :as this} messages to]
+              (let [to-dim (dim-for-node to)
+                    {:keys [mu sigma]} (product-of-normals (assoc this :to-dim to-dim :messages messages))
+                    rsum (summarize mu sigma to-dim)
+                    {:keys [mu sigma]} (meta rsum)
+                    ]
+                {
+                 :dim-for-node dim-for-node
+                 :sum rsum
+                 :value 1
+                 :min [1 mu]
+                 ;:im (mapv (fn [[s c]] [s (zipmap (keys (dissoc dim-for-node to)) c)]) (map indexed-min rsum))
+                 :repr (list 'min (cons '∑ (cons (:repr (i this)) (map :repr messages))))
+                 }))
+            `<> (fn [{:keys [f id dim-for-node zero-vector zero-matrix d] :as this} messages to to-msg parent-msg]
+                  (let [
+                          conf (get-in parent-msg [:configuration id])
+                          mind (zipmap (map :id messages) (range (count messages)))
+                          to-conf (get conf to)
+                          ]
+                     {
+                      :dim-for-node dim-for-node
+                      :value 0
+                      :mind mind
+                      :conf conf
+                      :configuration (assoc (:configuration parent-msg) to to-conf)
+                      }))
+            `i (fn [{:keys [f id dim-for-node zero-vector zero-matrix d]}]
+                 {:value f :repr id :dim-for-node dim-for-node})
+            ; Updatable
+            `updated
+            (fn [this {:keys [cpm]}]
+              (assoc this :f (apply (if (number? (first cpm)) normal multivariate-normal) cpm)))
             })] node)))
 
 (comment
@@ -297,29 +344,32 @@
     [model
        {:fg
         (fgtree
-          (:v [:pv [0.5 1]]
-            [:s|s'&v [[0.5 0.5 0.5]
-                      [[2.0 0.5 0.2]
-                       [0.5 2.0 0.1]
-                       [0.2 0.5 1.0]]]
-              (:s' [:ps' [1/2 4]])
-              (:s [:ps [1/2 4]])
+          (:s0 [:ps0 [0.5 2]]
+            [:s1|s0&v [[0.5 0.5 0.5]
+
+                      [[1.0 0.7 0.99]
+                       [0.7 1.0 0.1]
+                       [0.99 0.1 1.0]]]
+              (:s1 ;[:ps1 [1/2 4]]
+                )
+              (:v [:pv [1/2 1]])
              ]))
-        :priors {:v :pv :s :ps :s' :ps'}}
+        :priors {:v :pv :s0 :ps0}}
      ]
   (->>
     (reductions
-      (fn update-it [{{s :s} :marginals :as m} {v :pv :as data}]
+      (fn update-it [{{s :s1} :marginals :as m} {pv :pv :as data}]
         (let [p [(or (:mu (meta s)) 0.5) (or (:sigma (meta s)) 4)]]
-          (update-priors (assoc m :data (assoc data :ps' p)))))
+          (println ">" p)
+          (update-priors (assoc m :data (assoc data :ps0 p)))))
         model
        (concat
-         (repeat 16 {:pv [0 0.1]})
          (repeat 16 {:pv [1 0.1]})
+         (repeat 16 {:pv [0 0.1]})
          ;(repeat 4 {:pv [0 0.1]})
          ;(repeat 4 {:pv [1 0.1]})
          ))
-      (map (comp :s :marginals))
+      (map (comp :s1 :marginals))
       rest
     ;(map (fn [f] (map (juxt identity f) (range 0 1.25 0.25))))
       ((fn [sfs]
@@ -340,9 +390,81 @@
                :theme :matlab})))))
       ))
 
+  ((multivariate-normal
+     [0.5 0.5]
+     [[2.0 0.5]
+      [0.5 2.0]]) [1 0])
+
   (require '[com.hypirion.clj-xchart :as xc :refer [view xy-chart]])
 
   (import '[java.awt Color])
+
+  (require '[cljplot.render :as pr]
+           '[cljplot.build :as pb]
+           '[clojure2d.color :as pc]
+    '[cljplot.core :refer [save show]]
+    '[fastmath.random :as fr])
+
+  (fr/randval 0 1)
+
+  (fr/grand)
+
+  (fr/randval [(fr/grand) (fr/grand)] [(fr/grand -10 1) (fr/grand -10 1)])
+
+  (let [mu [0.5 0.5 0.5]
+        a 0.9 b 0.9 c 0.1
+        sigma [[1.0 a b]
+               [a 1.0 c]
+               [b c 1.0]]
+        f (multivariate-normal mu sigma)
+        fn2d (fn [v s'] (f [v s' 0.5]))
+        ;ms (summarize mu sigma 2)
+        ]
+    (-> (pb/series [:function-2d fn2d {:x [0 1] :y [0 1]}])
+     (pb/preprocess-series)
+     (pb/add-axes :bottom)
+     (pb/add-axes :left)
+     (pb/add-label :bottom "2d function")
+     (pr/render-lattice {:width 512 :height 512})
+     (save "results/examples/function2d.jpg")
+     (show)))
+
+  (let [mu [0.5 0.5]
+        sigma [[1.0 0.99]
+               [0.99 1.0]]
+        f (multivariate-normal mu sigma)
+        fn2d (fn [v s'] (f [v s']))
+        ;ms (summarize mu sigma 2)
+        ]
+    (-> (pb/series [:function-2d fn2d {:x [0 1] :y [0 1]}])
+     (pb/preprocess-series)
+     (pb/add-axes :bottom)
+     (pb/add-axes :left)
+     (pb/add-label :bottom "2d function")
+     (pr/render-lattice {:width 512 :height 512})
+     (save "results/examples/function2d.jpg")
+     (show)))
+
+  (let [mu [0.5 0.5]
+        sigma [[1.0 0.9]
+               [0.9 1.0]]
+        f (multivariate-normal mu sigma)
+        {:keys [mu sigma]} (meta f)
+        fn2d (fn [v s'] (f [v s']))
+        ms (summarize mu sigma 0)
+        ]
+    (view
+      (xy-chart
+        [["p"
+          {:x (range -10 10 0.01)
+           :y (map ms (range -10 10 0.01))
+           :style {:line-color :black
+                   :marker-type :none
+                   :line-style :solid}}]]
+        {:title "-"
+         :x-axis {:title "specificity"}
+         :y-axis {:title "p" :decimal-pattern "##.##"}
+         :theme :matlab})))
 
 
   (em/make-zero 0)

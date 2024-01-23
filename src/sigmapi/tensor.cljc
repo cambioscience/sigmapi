@@ -38,8 +38,7 @@
   [f]
   (fn ibf [mat]
     (let [best (f mat)]
-      [best (first (filter (fn [v] (== best (apply m/mget mat v)))
-            (m/index-seq mat)))])))
+      [best (first (filter (fn [v] (== best (apply m/mget mat v))) (m/index-seq mat)))])))
 
 (def indexed-min (indexed-best m/emin))
 
