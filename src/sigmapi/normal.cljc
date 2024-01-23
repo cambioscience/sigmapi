@@ -150,15 +150,13 @@
             (fn [{:keys [f id dim-for-node zero-vector zero-matrix d] :as this} messages to]
               (let [to-dim (dim-for-node to)
                     {:keys [mu sigma]} (product-of-normals (assoc this :to-dim to-dim :messages messages))
-                    rsum (summarize mu sigma to-dim)
-                    {:keys [mu sigma]} (meta rsum)
                     ]
                 {
                  :dim-for-node dim-for-node
-                 :sum rsum
+                 :sum mu
                  :value 1
-                 :min [1 mu]
-                 ;:im (mapv (fn [[s c]] [s (zipmap (keys (dissoc dim-for-node to)) c)]) (map indexed-min rsum))
+                 :min (apply max-key first (map vector mu (range)))
+                 :im (mapv (fn [[s c]] [s (zipmap (keys (dissoc dim-for-node to)) c)]) mu)
                  :repr (list 'min (cons '∑ (cons (:repr (i this)) (map :repr messages))))
                  }))
             `<> (fn [{:keys [f id dim-for-node zero-vector zero-matrix d] :as this} messages to to-msg parent-msg]
@@ -182,76 +180,42 @@
               (assoc this :f (apply (if (number? (first cpm)) normal multivariate-normal) cpm)))
             })] node)))
 
-(comment
-  (deftype MaxNormalFactorNode
-    [f id dim-for-node]
-    Messaging
-    (>< [this messages to]
-      (let [
-            to-dim (dim-for-node to)
-            {:keys [mu sigma]} (product-of-normals f id dim-for-node messages to-dim)
-            rsum (combine f m/add messages to dim-for-node)
-            mm (map m/emin rsum)
-            ]
+(defmethod make-node [:map :variable :normal]
+  ([{:keys [id] :as node}]
+   (with-meta node
+     {; Messaging
+     `><
+      (fn [{:keys [f id dim-for-node d] :as this} messages to]
         {
-         :dim-for-node dim-for-node
-         :value mm
-         :min (indexed-min mm)
-         :sum rsum
-         :im (mapv (fn [[s c]] [s (zipmap (keys (dissoc dim-for-node to)) c)]) (map indexed-min rsum))
-         :repr (list 'min (cons '∑ (cons (:repr (i this)) (map :repr messages))))
-         }))
-    (<> [this messages to to-msg parent-msg]
-      (let [
-            conf (get-in parent-msg [:configuration id])
-            mind (zipmap (map :id messages) (range (count messages)))
-            to-conf (get conf to)
-            ]
-       {
-        :dim-for-node dim-for-node
-        :value 0
-        :mind mind
-        :conf conf
-        :configuration (assoc (:configuration parent-msg) to to-conf)
-        }))
-   (i [this] {:value f :repr id :dim-for-node dim-for-node})
-   LogSpace
-   (p [this x] (m/emap P x)))
+         :value (product-of-normals (assoc this :to-dim (dim-for-node to) :messages messages))
+         :repr (cons '∑ (map :repr messages))
+         })
+      `<> (fn [{:keys [f id dim-for-node d] :as this} messages to to-msg parent-msg]
+            (let
+               [
+                ; to-msg is the msg received by this node from to on the >< pass,
+                ; which contains the indices of the other variables for each of this variable's states.
+                ; Here we are telling to its configuration and the configurations of all previous variables
+                ; In the outflowing messaging, the root variable node uses all its messages
+                {:keys [mu sigma] :as prod} (product-of-normals (assoc this :to-dim (dim-for-node to) :messages (cons to-msg messages)))
+                ;sum (apply m/add (map :value (cons to-msg messages)))
+                maxv (apply max-key first (map vector mu (range)))
+                ; look up the configuration we got in the forward pass which lead to this minimum
+                ; (for the root - others need to use the indices they got from the parent)
+                conf (if parent-msg (get-in parent-msg [:configuration id]) (get-in maxv [1]))
+                configuration (if parent-msg (:configuration parent-msg) {id conf})
+                mto (get-in to-msg [:im conf 1])
+                ]
+              {
+               :value sum
+               :min maxv
+               :configuration (assoc configuration to mto)
+               :repr (cons '∑ (map :repr messages))
+               }))
+      `i
+      (fn [this]
+        {:value (with-meta (fn identity [x] (em/by-rows [1])) {:mu 0 :sigma 1 :sigma-1 1}) :repr id})})))
 
- (deftype MaxNormalVariableNode
-   [id]
-   Messaging
-   (>< [this messages to]
-     (let [sum (apply m/add (map :value messages))]
-       {
-        :value sum
-        :repr (cons '∑ (map :repr messages))
-        }))
-   (<> [this messages to to-msg parent-msg]
-     (let
-       [
-        ; to-msg is the msg received by this node from to on the >< pass,
-        ; which contains the indices of the other variables for each of this variable's states.
-        ; Here we are telling to its configuration and the configurations of all previous variables
-        ; In the outflowing messaging, the root variable node uses all its messages
-        sum (apply m/add (map :value (cons to-msg messages)))
-        min (indexed-min sum)
-        ; look up the configuration we got in the forward pass which lead to this minimum
-        ; (for the root - others need to use the indices they got from the parent)
-        conf (if parent-msg (get-in parent-msg [:configuration id]) (get-in min [1 0]))
-        configuration (if parent-msg (:configuration parent-msg) {id conf})
-        mto (get-in to-msg [:im conf 1])
-        ]
-       {
-        :value sum
-        :min min
-        :configuration (assoc configuration to mto)
-        :repr (cons '∑ (map :repr messages))
-        }))
-   (i [this] {:value 0 :repr 0})
-   Variable
-   LogSpace
-   (p [this x] (m/emap P x))))
 
 
 
@@ -499,6 +463,7 @@
 
   Rq
 
+  (apply max-key first (map vector [1 52 21] (range)))
 
   (ns-unmap 'sigmapi.core 'make-node)
   (ns-unmap 'sigmapi.normal 'make-node)

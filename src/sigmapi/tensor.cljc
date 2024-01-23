@@ -118,15 +118,15 @@
         `><
         (fn [{:keys [f id dim-for-node] :as this} messages to]
           (let [
-                rsum (combine f m/add messages to dim-for-node)
-                mm (map m/emin rsum)
+                prod (combine f m/add messages to dim-for-node)
+                mm (map m/emin prod)
                 ]
             {
              :dim-for-node dim-for-node
              :value mm
              :min (indexed-min mm)
-             :sum rsum
-             :im (mapv (fn [[s c]] [s (zipmap (keys (dissoc dim-for-node to)) c)]) (map indexed-min rsum))
+             :sum prod
+             :im (mapv (fn [[s c]] [s (zipmap (keys (dissoc dim-for-node to)) c)]) (map indexed-min prod))
              :repr (list 'min (cons '∑ (cons (:repr (i this)) (map :repr messages))))
              }))
         `<>

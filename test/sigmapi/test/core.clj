@@ -3,6 +3,7 @@
     [clojure.test :refer [deftest testing is]]
     [clojure.math :as maths :refer [pow exp PI sqrt log ceil floor round]]
     [sigmapi.core :as sp :refer :all]
+    [sigmapi.tensor :as spt :refer [random-matrix combine]]
     [clojure.core.matrix :as m]
     [kixi.stats.distribution :as xd]
     [kixi.stats.core :as xc]
@@ -164,7 +165,7 @@
           {:pd [0 1]}
           {:pd [0 1]}
           ])
-       {h :h} (-> experiment sp/updated-variables :marginals)
+       {h :h} (-> experiment spt/updated-variables :marginals)
        expected [0.2463 0.3547 0.3990]
        result (map (fn [hv ev] [hv ev (e= 10e-5 hv ev)]) h expected)
      ]
