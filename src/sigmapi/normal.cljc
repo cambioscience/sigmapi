@@ -67,6 +67,15 @@
              (sqrt (* (expt (* 2 PI) k) det-sigma)))))
        {:mu mu :sigma sigma :sigma-1 sigma-1})))
 
+(defn conditional-mvn-a|b&c [mu sigma]
+  (fn [a]
+    (let [[u1 u2] mu
+         [S11 S12 S21 S22] sigma
+          mu_ (+ u1 (* S12 (em/invert S22) (- a u2)))
+          sigma_ (- S11 (* S12 (em/invert S22) S21))
+         ]
+      (multivariate-normal mu_ sigma_))))
+
 (defn product-of-normals
   ([{:keys [f id dim-for-node messages to-dim zero-vector zero-matrix]}]
    (let
@@ -300,6 +309,9 @@
     [0.5 0.6 0.9]
    ]
 
+
+
+
 (require '[criterium.core :as c])
 
 (print-cause-trace *e)
@@ -309,14 +321,14 @@
        {:fg
         (fgtree
           (:s0 [:ps0 [0.5 2]]
-            [:s1|s0&v [[0.5 0.5 0.5]
+            [:s1|s0&v [[0.50 0.50 0.50]
 
-                      [[1.0 0.7 0.99]
-                       [0.7 1.0 0.1]
-                       [0.99 0.1 1.0]]]
+                      [[1.00 0.60 0.99]
+                       [0.60 1.00 0.10]
+                       [0.99 0.10 1.00]]]
               (:s1 ;[:ps1 [1/2 4]]
                 )
-              (:v [:pv [1/2 1]])
+              (:v [:pv [0.5 1]])
              ]))
         :priors {:v :pv :s0 :ps0}}
      ]
