@@ -116,8 +116,8 @@
        {:value (with-meta (fn identity [x] (em/by-rows [1])) {:mu 0 :sigma 1 :sigma-1 1}) :repr id})})))
 
 (defmethod make-node [:sp :factor :normal]
-  ([{:keys [graph id clm cpm dfn] :as params}]
-   (let [f (apply (if (number? (first cpm)) normal multivariate-normal) cpm)
+  ([{:keys [graph id mu sigma dfn] :as params}]
+   (let [f ((if (number? mu) normal multivariate-normal) mu sigma)
          s1 (:sigma-1 (meta f))
          d  (if (number? s1) 0 (em/num-cols s1))
          zv (em/make-zero 1 d)
@@ -140,8 +140,8 @@
                  {:value f :repr id :dim-for-node dim-for-node})
             ; Updatable
             `updated
-              (fn [this {:keys [cpm]}]
-                (assoc this :f (apply (if (number? (first cpm)) normal multivariate-normal) cpm)))
+              (fn [this {:keys [mu sigma]}]
+                (assoc this :f ((if (number? mu) normal multivariate-normal) mu sigma)))
             })] node)))
 
 (defmethod make-node [:map :factor :normal]
@@ -310,7 +310,7 @@
    ]
 
 
-
+  (vector? (first {:x 5}))
 
 (require '[criterium.core :as c])
 
@@ -320,29 +320,29 @@
     [model
        {:fg
         (fgtree
-          (:s0 [:ps0 [0.5 2]]
-            [:s1|s0&v [[0.50 0.50 0.50]
-
-                      [[1.00 0.60 0.99]
-                       [0.60 1.00 0.10]
-                       [0.99 0.10 1.00]]]
-              (:s1 ;[:ps1 [1/2 4]]
-                )
-              (:v [:pv [0.5 1]])
-             ]))
-        :priors {:v :pv :s0 :ps0}}
+          (:s0 [:ps0 {:mu 0.5 :sigma 2}]
+            [:s1|s0&v
+             {:mu [0.50 0.50 0.50]
+              :sigma
+              [[1.00 0.60 0.99]
+               [0.60 1.00 0.10]
+               [0.99 0.10 1.00]]}
+             (:s1)
+             (:v [:pv {:mu 0.5 :sigma 1}])]))
+        :priors {:v :pv :s0 :ps0}
+        :impl :normal}
      ]
   (->>
     (reductions
       (fn update-it [{{s :s1} :marginals :as m} {pv :pv :as data}]
-        (let [p [(or (:mu (meta s)) 0.5) (or (:sigma (meta s)) 4)]]
-          (println ">" p)
+        (let [p {:mu (or (:mu (meta s)) 0.5) :sigma (or (:sigma (meta s)) 4)}]
+          (println " >" p)
           (update-priors (assoc m :data (assoc data :ps0 p)))))
-        model
-       (concat
-         (repeat 16 {:pv [1 0.1]})
-         (repeat 16 {:pv [0 0.1]})
-         ;(repeat 4 {:pv [0 0.1]})
+      model
+      (concat
+        (repeat 16 {:pv {:mu 1 :sigma 0.1}})
+        (repeat 16 {:pv {:mu 0 :sigma 0.1}})
+        ;(repeat 4 {:pv [0 0.1]})
          ;(repeat 4 {:pv [1 0.1]})
          ))
       (map (comp :s1 :marginals))

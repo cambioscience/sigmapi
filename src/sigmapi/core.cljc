@@ -1,48 +1,42 @@
-(ns ^{:doc "𝝨𝝥" :author "Matthew Chadwick"}
+(ns ^{:doc
+      " 𝝨𝝥
+
+        Implementations of the sum-product and max-sum
+        algorithms, from Factor Graphs and the Sum-Product Algorithm
+        Frank R. Kschischang, Senior Member, IEEE, Brendan J. Frey, Member, IEEE, and
+        Hans-Andrea Loeliger, Member, IEEE
+        IEEE TRANSACTIONS ON INFORMATION THEORY, VOL. 47, NO. 2, FEBRUARY 2001
+        DOI: 10.1109/18.910572
+
+        Also, Pattern Recognition and Machine Learning,
+        Christopher M. Bishop, was invaluable
+       "
+      :author "Matthew Chadwick"
+      :license
+        "
+
+        This library is free software; you can redistribute it and/or
+        modify it under the terms of the GNU Lesser General Public
+        License as published by the Free Software Foundation; either
+        version 2.1 of the License, or (at your option) any later version.
+
+        This library is distributed in the hope that it will be useful,
+        but WITHOUT ANY WARRANTY; without even the implied warranty of
+        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+        Lesser General Public License for more details.
+
+        /*
+        * Copyright (C) 2016 Intermine
+        *
+        * This code may be freely distributed and modified under the
+        * terms of the GNU Lesser General Public Licence. This should
+        * be distributed with the code. See the LICENSE file for more
+        * information or http://www.gnu.org/copyleft/lesser.html.
+        *
+        */
+
+        "}
   sigmapi.core
-  "
-
-    Implementations of the sum-product and max-sum
-    algorithms, from Factor Graphs and the Sum-Product Algorithm
-    Frank R. Kschischang, Senior Member, IEEE, Brendan J. Frey, Member, IEEE, and
-    Hans-Andrea Loeliger, Member, IEEE
-    IEEE TRANSACTIONS ON INFORMATION THEORY, VOL. 47, NO. 2, FEBRUARY 2001
-    DOI: 10.1109/18.910572
-
-    Also, Pattern Recognition and Machine Learning,
-    Christopher M. Bishop, was invaluable
-
-
-
-
-    This library is free software; you can redistribute it and/or
-    modify it under the terms of the GNU Lesser General Public
-    License as published by the Free Software Foundation; either
-    version 2.1 of the License, or (at your option) any later version.
-
-    This library is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-    Lesser General Public License for more details.
-
-    /*
-    * Copyright (C) 2016 Intermine
-    *
-    * This code may be freely distributed and modified under the
-    * terms of the GNU Lesser General Public Licence. This should
-    * be distributed with the code. See the LICENSE file for more
-    * information or http://www.gnu.org/copyleft/lesser.html.
-    *
-    */
-
-
-    TODO:
-
-    * rewrite this with transducers
-    * separate api from impl
-    * Neanderthal implementation
-
-  "
   (:require
     [clojure.core.matrix :as m]
     [clojure.set :as set]
@@ -57,7 +51,7 @@
   (defmacro fgtree [xp]
    (walk/postwalk
      (fn [x]
-       (if (and (seqable? x) (keyword? (first x)))
+       (if (and (or (vector? x) (list? x)) (not (map-entry? x)) (keyword? (first x)))
          `(~(if (vector? x) `vector `list) ~@x)
          x))
      xp)))
@@ -70,7 +64,7 @@
     There are several algorithms that can be run on a factor graph,
     each of which causes different kinds of messages to be exchanged.
     The only constant is the messaging itself, and that each node must
-    have product (x) and identity (i) functions. Product doesn't mean
+    have product and identity functions. Product doesn't mean
     multiplication necessarily, it just means the ability to combine
     messages into one.
   ")
@@ -131,7 +125,7 @@
 
   change CPM and CLM to params map ala hiccup
   "
-  ([alg edges]
+  ([alg impl edges]
       (let [g (apply lg/graph (map (partial map :id) edges))
             t (lg/graph (la/bf-span g (:id (ffirst edges))))
             nodes (into {} (map (juxt :id identity) (mapcat identity edges)))
@@ -149,37 +143,33 @@
                      (into {}
                        (map
                          (fn [id]
-                           [id (if-let [mat (get-in nodes [id :matrix])]
+                           [id (if-let [params (get-in nodes [id :params])]
+                                 (make-node (assoc params
+                                              :alg alg
+                                              :make-with [:alg :kind :impl]
+                                              :kind :factor :impl impl :graph g :id id
+                                              :dfn (zipmap (neighbours id) (range))
+                                              :mfn (zipmap (neighbours id) (map (fn [n] (get-in nodes [n :params])) (neighbours id)))))
                                  (make-node {:alg alg
                                              :make-with [:alg :kind :impl]
-                                             :kind :factor :impl :normal :graph g :id id
-                                             :cpm mat
-                                             :dfn (zipmap (neighbours id) (range))
-                                             :mfn (zipmap (neighbours id) (map #(get-in nodes [% :matrix]) (neighbours id)))})
-                                 (make-node {:alg alg
-                                             :make-with [:alg :kind :impl]
-                                             :kind :variable :impl :normal :id id}))])
+                                             :kind :variable :impl impl :id id}))])
                          (lg/nodes g)))})))
 
 (defn graph->fg [alg {:keys [nodes edges] :as graph}]
   (let [nodes' (into {} (concat
                           (map (fn [id] [id {:id (keyword (str id))}]) (remove nodes edges))
-                          (map (fn [[id matrix]] [id {:id (keyword (str id)) :matrix matrix}]) nodes)))
+                          (map (fn [[id params]] [id {:id (keyword (str id)) :params params}]) nodes)))
         edges' (partition 2 (map nodes' edges))
         ]
     (merge (edges->fg alg edges') (select-keys graph [:states :aliases]))))
 
 (defn update-factors
-  "Replace nodes for the given matrices with new ones"
-  ([model matrices]
-   (update-factors model matrices :cpm))
-  ([{g :graph alg :alg nodes :nodes :as model} matrices cmkey]
-    (reduce
-     (fn [model [id mat]]
-       (let [n (nodes id) {dfn :dim-for-node} (i n)]
-         (update-in model [:nodes id] updated
-           {cmkey mat})))
-      model matrices)))
+  "Update the given nodes"
+  ([{g :graph alg :alg nodes :nodes :as model} updates]
+   (reduce
+     (fn [model [id params]]
+       (update-in model [:nodes id] updated params))
+     model updates)))
 
 (defn change-alg
   "
@@ -190,10 +180,8 @@
   [{g :graph alg :alg nodes :nodes :as model}]
   (reduce
     (fn [model [id node]]
-      (let [{dfn :dim-for-node v :value} (i node)]
-        (assoc-in model [:nodes id]
-         (make-node {:alg   alg :kind (:kind node)
-                     :graph g :id id :clm v :dfn dfn}))))
+      (assoc-in model [:nodes id]
+        (make-node (assoc node :alg alg))))
     (assoc model :messages {}) nodes))
 
 ; make this work with one edge
@@ -207,17 +195,17 @@
           (fn [r c]
               (as-edges c
                 (conj r
-                  [(let [f {:id (first exp)}] (if (vector? exp) (assoc f :matrix (second exp)) f))
+                  [(let [f {:id (first exp)}] (if (vector? exp) (assoc f :params (second exp)) f))
                    (if (vector? c)
-                    {:id (first c) :matrix (second c)}
+                    {:id (first c) :params (second c)}
                     {:id (first c)})])))
           edges branches))
       edges)))
 
 (defn exp->fg
   "Return a factor graph for the given expression"
-  [alg exp]
-  (edges->fg alg (as-edges exp)))
+  [alg impl exp]
+  (edges->fg alg impl (as-edges exp)))
 
 (defn prior-nodes [{:keys [graph nodes] :as model}]
   (into {} (map (fn [id] [id (nodes id)]) (filter
@@ -464,7 +452,7 @@
 
 (defn compute-MAP-config [exp]
   (MAP-config
-    (propagate (exp->fg :sp/mxp exp))))
+    (propagate (exp->fg :sp/map exp))))
 
 (defn as-states [config model]
   (into {}
@@ -479,9 +467,9 @@
       sequence-by-id)))
 
 (defn update-priors
-  [{:keys [fg updated marginals priors data] :as model}]
+  [{:keys [fg impl updated marginals priors data] :as model}]
       (let [
-             {nodes :nodes :as graph} (or updated (exp->fg :sp fg))
+             {nodes :nodes :as graph} (or updated (exp->fg :sp impl fg))
               post (or marginals (zipmap (keys priors) (map (comp :value i nodes) (map (fn [v] (if (keyword? v) v (last v))) (vals priors)))))
               p2 (select-keys post (keys priors))
               p1 (merge (zipmap (map (fn [v] (if (keyword? v) v (first v))) (vals priors)) (map (comp (juxt :mu :sigma) meta p2) (keys priors))) data)
