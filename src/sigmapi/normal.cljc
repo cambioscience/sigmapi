@@ -169,7 +169,7 @@
 
 (defn summarize
   "
-    summing (integrating) over all variables except to
+    summing (integrating) over all variables except   to
     is the same as the marginal of to (all the other variables are marginalized out)
     https://statproofbook.github.io/P/mvn-marg.html
   "
