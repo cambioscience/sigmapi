@@ -8,6 +8,88 @@
     [emmy.matrix :as em]
     [sigmapi.core :as sp :refer :all]))
 
+(defn mup [mat rs cs f]
+  (m/set-selection mat rs cs
+    (f (m/select mat rs cs))))
+
+(defn qr
+  "
+    QR decomposition by Householder reflection
+
+    adapted from Matlab implementation by @tobydriscoll
+    returns Q the eigenvectors and R
+    the diagonal of which is the eigenvalues
+    Qd = I 0
+         0 F
+    F begins at column d, row d
+    F is a n-d dimensional vector space
+    in which a hyperplane H reflects z
+    to the vector |z|e1
+    v = |z|e1 - z
+    Fy = (I - 2(vv'/v'v))y
+    which is an orthonormal projector
+  "
+  ([a]
+   (qr (m/identity-matrix (first (m/shape a))) (m/shape a) a))
+  ([I [m n] A]
+    (loop [d 0 R A Q I]
+      (if (< d n)
+        (let [[z1 :as z] (m/select R (range d m) d)
+              v (m/matrix
+                  (cons
+                    (- (* -1.0 (Math/signum (double z1)) (m/magnitude z)) z1)
+                    (m/mul -1.0 (m/select z :rest))))
+              Qd (mup I (range d m) (range d n)
+                    (fn Fy [i] (m/sub i (m/mul 2.0 (m/div (m/outer-product v v)
+                                                          (m/inner-product v v))))))]
+          (recur (inc d) (m/mmul Qd R) (m/mmul Q Qd)))
+        {:A A
+         :Q Q
+         :R R
+         :A=QR (m/mmul Q R)
+         :eigenvectors (m/mul -1 (m/transpose Q))
+         :eigenvalues (m/mul -1 (m/diagonal R))
+         }))))
+
+(defn rotation-matrix
+  "make a (column-based) rotation matrix from these angles"
+  [[x y z]]
+  (->
+    [
+       (* (cos x) (cos y))
+       (* (sin x) (cos y))
+       (* -1.0 (sin y)) 0
+
+       (- (* (* (cos x) (sin y)) (sin z)) (* (sin x) (cos z)))
+       (+ (* (* (sin x) (sin y)) (sin z)) (* (cos x) (cos z)))
+       (* (cos y) (sin z)) 0
+
+       (+ (* (* (cos x) (sin y)) (cos z)) (* (sin x) (sin z)))
+       (- (* (* (sin x) (sin y)) (cos z)) (* (cos x) (sin z)))
+       (* (cos y) (cos z)) 0
+
+       0 0 0 1
+    ]
+    (m/reshape [4 4])))
+
+(defn scale-matrix [[x y z]]
+  (m/matrix
+    [
+     [x 0 0 0]
+     [0 y 0 0]
+     [0 0 z 0]
+     [0 0 0 1]
+     ]))
+
+(defn translation-matrix [[x y z]]
+  (m/matrix
+    [
+     [1 0 0 x]
+     [0 1 0 y]
+     [0 0 1 z]
+     [0 0 0 1]
+     ]))
+
 (def shape (juxt em/num-rows em/num-cols))
 
 (defn broadcast [f]
@@ -322,13 +404,18 @@
         (fgtree
           (:s0 [:ps0 {:mu 0.5 :sigma 2}]
             [:s1|s0&v
-             {:mu [0.50 0.50 0.50]
+             {:mu [-0.3 0.2 0.2]
               :sigma
-              [[1.00 0.60 0.99]
-               [0.60 1.00 0.10]
-               [0.99 0.10 1.00]]}
-             (:s1)
-             (:v [:pv {:mu 0.5 :sigma 1}])]))
+              (m/to-nested-vectors
+                  (m/submatrix
+                   (m/mmul
+                     (scale-matrix [1.9 2.3 4.3])
+                     ;(scale-matrix [0.5 0.5 0.5])
+                     (rotation-matrix [-0.4 -0.65 0.2])
+                     ) 0 3 0 3))
+              }
+             (:v [:pv {:mu 0.5 :sigma 1}])
+             (:s1)]))
         :priors {:v :pv :s0 :ps0}
         :impl :normal}
      ]
@@ -365,6 +452,30 @@
                :y-axis {:title "p" :decimal-pattern "##.##"}
                :theme :matlab})))))
       ))
+
+  (qr
+    [[1.00 0.60 0.99]
+     [0.60 1.00 0.10]
+     [0.99 0.10 1.00]])
+
+  (qr
+    [[5 0]
+     [0 1]])
+
+  (let [t (m/to-nested-vectors
+            (m/submatrix
+             (m/mmul
+               (rotation-matrix [0.32 -0.66 -0.17])
+               (scale-matrix [1.936 2.389 4.386])
+               (scale-matrix [1 1 -1])
+               ) 0 3 0 3))]
+    t)
+
+
+
+  (/ 2 (sqrt 13))
+
+  (/ -3.60555127546399 -1.386750490563073)
 
   ((multivariate-normal
      [0.5 0.5]
@@ -405,14 +516,14 @@
      (save "results/examples/function2d.jpg")
      (show)))
 
-  (let [mu [0.5 0.5]
-        sigma [[1.0 0.99]
-               [0.99 1.0]]
+  (let [mu [0 0]
+        sigma [[3 2]
+               [2 3]]
         f (multivariate-normal mu sigma)
         fn2d (fn [v s'] (f [v s']))
         ;ms (summarize mu sigma 2)
         ]
-    (-> (pb/series [:function-2d fn2d {:x [0 1] :y [0 1]}])
+    (-> (pb/series [:function-2d fn2d {:x [-10 10] :y [-10 10]}])
      (pb/preprocess-series)
      (pb/add-axes :bottom)
      (pb/add-axes :left)

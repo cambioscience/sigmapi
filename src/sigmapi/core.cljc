@@ -123,7 +123,6 @@
   TODO: need to check shape of graph and
   dimensionality of matrices
 
-  change CPM and CLM to params map ala hiccup
   "
   ([alg impl edges]
       (let [g (apply lg/graph (map (partial map :id) edges))
