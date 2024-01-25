@@ -145,11 +145,13 @@
                            [id (if-let [params (get-in nodes [id :params])]
                                  (make-node (assoc params
                                               :alg alg
+                                              :features #{}
                                               :make-with [:alg :kind :impl]
                                               :kind :factor :impl impl :graph g :id id
-                                              :dfn (zipmap (neighbours id) (range))
+                                              :dim-for-node (zipmap (neighbours id) (range))
                                               :mfn (zipmap (neighbours id) (map (fn [n] (get-in nodes [n :params])) (neighbours id)))))
                                  (make-node {:alg alg
+                                             :features #{}
                                              :make-with [:alg :kind :impl]
                                              :kind :variable :impl impl :id id}))])
                          (lg/nodes g)))})))
@@ -165,6 +167,7 @@
 (defn update-factors
   "Update the given nodes"
   ([{g :graph alg :alg nodes :nodes :as model} updates]
+   (println ">" updates)
    (reduce
      (fn [model [id params]]
        (update-in model [:nodes id] updated params))

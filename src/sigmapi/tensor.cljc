@@ -144,6 +144,9 @@
              :configuration (assoc (:configuration parent-msg) to to-conf)
              }))
         `i (fn [{:keys [f id dim-for-node] :as this}] {:value f :repr id :dim-for-node dim-for-node})
+        `updated
+          (fn [this {:keys [cpm clm]}]
+            (assoc this :f (or clm (m/emap ln- cpm))))
         ; LogSpace
         `p (fn [this x] (m/emap P x))}))))
 
@@ -188,7 +191,7 @@
   ([node]
    (with-meta (-> node
                 (assoc :kind :factor)
-                (update node :features conj :passes))
+                (update :features conj :passes))
      {; Messaging
        `><
        (fn [{:keys [f id dim-for-node] :as this} messages to]
@@ -206,6 +209,9 @@
        `i
        (fn [{:keys [f id dim-for-node]}]
          {:value f :repr id :dim-for-node dim-for-node})
+      `updated
+        (fn [this {:keys [cpm clm] :as p}]
+          (assoc this :f (or clm (m/emap ln- cpm))))
        ; LogSpace
        `p (fn [this x] (m/emap P x))})))
 
@@ -242,6 +248,7 @@
 (defn update-variables [graph post priors data]
   (reductions
     (fn [[g post] data-priors]
+      (println ":" post)
       (let [
               p2 (select-keys post (keys priors))
               p1 (merge (zipmap (vals priors) (map p2 (keys priors))) data-priors)
@@ -254,7 +261,7 @@
   (let [[g m]
           (last
            (update-variables
-             (or updated (exp->fg :sp fg)) marginals priors data))]
+             (or updated (exp->fg :sp :tensor fg)) marginals priors data))]
     (-> model
       (assoc :marginals m)
       (assoc :updated g))))

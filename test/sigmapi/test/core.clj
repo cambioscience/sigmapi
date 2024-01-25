@@ -1,5 +1,6 @@
 (ns sigmapi.test.core
   (:require
+    [clojure.stacktrace :refer [print-cause-trace]]
     [clojure.test :refer [deftest testing is]]
     [clojure.math :as maths :refer [pow exp PI sqrt log ceil floor round]]
     [sigmapi.core :as sp :refer :all]
@@ -289,21 +290,21 @@
     [model
      {:fg
       (sp/fgtree
-        (:d [:pd [0.5 0.5]]
+        (:d [:pd {:cpm [0.5 0.5]}]
           [:h|d
-           [
-            [0.6 0.5 0.4]
-            [0.4 0.5 0.6]
-            ]
-           (:h [:ph [1/3 1/3 1/3]])
+           {:cpm [
+             [0.6 0.5 0.4]
+             [0.4 0.5 0.6]
+             ]}
+           (:h [:ph {:cpm [1/3 1/3 1/3]}])
            ]))
       :priors
       {:h :ph :d :pd}}
      experiment
-       (assoc model :data (repeat 8 {:pd [1 0]}))
-       {h :h} (-> experiment sp/updated-variables :marginals)
-       expected [0.2463 0.3547 0.3990]
-       result (map (fn [hv ev] [hv ev (e= 10e-5 hv ev)]) h expected)
+     (assoc model :data (repeat 8 {:pd {:cpm [1 0]}}))
+     {h :h} (-> experiment spt/updated-variables :marginals)
+     expected [0.2463 0.3547 0.3990]
+     result (map (fn [hv ev] [hv ev (e= 10e-5 hv ev)]) h expected)
      ]
     h)
 
@@ -311,20 +312,21 @@
       (fgtree
         (:t
           [:r|t
-           [
-            [1/2 1/2 0]
-            [0 2/3 1/3]
-            [1/3 1/3 1/3]
-            ]
-           (:r [:pr [1/6 2/3 1/6]])]
-          [:pt [1/3 1/3 1/3]]))
-     (exp->fg :sp/mxp)
+           {:cpm [
+             [1/2 1/2 0]
+             [0 2/3 1/3]
+             [1/3 1/3 1/3]
+             ]}
+           (:r [:pr {:cpm [1/6 2/3 1/6]}])]
+          [:pt {:cpm [1/3 1/3 1/3]}]))
+     (exp->fg :MAP :tensor)
     (propagate (comp (fn [m] (println (update-vals (:messages m) keys)) m) message-passing))
-    :end
+    ;:end
     ;:messages
-    ;MAP-config
+    MAP-config
     )
 
+  (print-cause-trace *e)
 
   ; (t) [r|t []]
   ; [r|t] (r)
