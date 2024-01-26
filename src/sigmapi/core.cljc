@@ -90,10 +90,6 @@
   (<> [this messages to to-msg parent])
   (i [this]))
 
-(defprotocol LogSpace :extend-via-metadata true
-  "Return a probability for x"
-  (p [this x]))
-
 (defprotocol Updatable :extend-via-metadata true
   (updated [this x]))
 
@@ -139,22 +135,25 @@
          :leaves     (leaves t)
          :neighbours neighbours
          :nodes
-                     (into {}
-                       (map
-                         (fn [id]
-                           [id (if-let [params (get-in nodes [id :params])]
-                                 (make-node (assoc params
-                                              :alg alg
-                                              :features #{}
-                                              :make-with [:alg :kind :impl]
-                                              :kind :factor :impl impl :graph g :id id
-                                              :dim-for-node (zipmap (neighbours id) (range))
-                                              :mfn (zipmap (neighbours id) (map (fn [n] (get-in nodes [n :params])) (neighbours id)))))
-                                 (make-node {:alg alg
-                                             :features #{}
-                                             :make-with [:alg :kind :impl]
-                                             :kind :variable :impl impl :id id}))])
-                         (lg/nodes g)))})))
+           (into {}
+             (map
+               (fn [id]
+                 [id
+                  (let [params' (get-in nodes [id :params])
+                        params (if (map? params') params' {:value params'})]
+                     (if params'
+                        (make-node (assoc params
+                                     :alg alg
+                                     :features #{}
+                                     :make-with [:alg :kind :impl]
+                                     :kind :factor :impl impl :graph g :id id
+                                     :dim-for-node (zipmap (neighbours id) (range))
+                                     :mfn (zipmap (neighbours id) (map (fn [n] (get-in nodes [n :params])) (neighbours id)))))
+                        (make-node {:alg alg
+                                    :features #{}
+                                    :make-with [:alg :kind :impl]
+                                    :kind :variable :impl impl :id id})))])
+               (lg/nodes g)))})))
 
 (defn graph->fg [alg {:keys [nodes edges] :as graph}]
   (let [nodes' (into {} (concat

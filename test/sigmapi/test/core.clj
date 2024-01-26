@@ -290,18 +290,19 @@
     [model
      {:fg
       (sp/fgtree
-        (:d [:pd {:cpm [0.5 0.5]}]
+        (:d [:pd [0.5 0.5]]
           [:h|d
-           {:cpm [
-                  [0.5 0.4 0.1]
-                  [0.5 0.6 0.9]
-                  ]}
-           (:h [:ph {:cpm [0.4 0.4 0.2]}])
+           [
+            [0.5 0.4 0.1]
+            [0.5 0.6 0.9]
+            ]
+           (:h [:ph [0.4 0.4 0.2]])
            ]))
       :priors
       {:h :ph :d :pd}}
      experiment (assoc model :data (repeat 2 {:pd {:cpm [0 1]}}))
      {{h :cpm} :h} (-> experiment spt/updated-variables :marginals)
+     ;h (-> experiment :fg spt/compute-marginals)
      expected [0.2463 0.3547 0.3990]
      result (map (fn [hv ev] [hv ev (e= 10e-5 hv ev)]) h expected)
      ]

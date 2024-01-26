@@ -6,7 +6,6 @@
     [sigmapi.core :refer :all]))
 
 
-
 (def log2 (log 2))
 
 (defn ln [x] (/ (log x) log2))
@@ -146,9 +145,7 @@
         `i (fn [{:keys [f id dim-for-node] :as this}] {:value f :repr id :dim-for-node dim-for-node})
         `updated
           (fn [this {:keys [cpm clm]}]
-            (assoc this :f (or clm (m/emap ln- cpm))))
-        ; LogSpace
-        `p (fn [this x] (m/emap P x))}))))
+            (assoc this :f (or clm (m/emap ln- cpm))))}))))
 
 (defmethod make-node [:MAP :variable :tensor]
   ([{:keys [id] :as node}]
@@ -184,13 +181,12 @@
            :repr (cons '∑ (map :repr messages))
            }))
       `i (fn [this] {:value 0 :repr 0})
-      ; LogSpace
-      `p (fn [this x] (m/emap P x))})))
+     })))
 
 (defmethod make-node [:sp :factor :tensor]
-  ([{:keys [clm cpm] :as node}]
+  ([{:keys [clm cpm value] :as node}]
    (with-meta (-> node
-                (assoc :f (or clm (m/emap ln- cpm)) :kind :factor)
+                (assoc :f (or clm (m/emap ln- (or cpm value))) :kind :factor)
                 (update :features conj :passes))
      {; Messaging
        `><
@@ -210,27 +206,24 @@
        (fn [{:keys [f id dim-for-node]}]
          {:value f :repr id :dim-for-node dim-for-node})
       `updated
-        (fn [this {:keys [cpm clm] :as p}]
-          (assoc this :f (or clm (m/emap ln- cpm))))
-       ; LogSpace
-       `p (fn [this x] (m/emap P x))})))
+        (fn [this {:keys [cpm value] :as p}]
+          (assoc this :f (or clm (m/emap ln- (or cpm value)))))})))
 
 (defmethod make-node [:sp :variable :tensor]
   ([node]
    (with-meta (assoc node :kind :variable)
      {; Messaging
-       `><
-        (fn [this messages to]
-           {
-            :value (apply m/add (map :value messages))
-            :repr (if (== 1 (count messages)) (:repr (first messages)) (cons '∏ (map :repr messages)))
-            })
-       `<>
-        (fn [this messages to to-msg parent-msg]
-           (>< this messages to))
-       `i (fn [{id :id}] {:value 0 :repr id})
-       ; LogSpace
-       `p (fn [this x] (m/emap P x))})))
+      `><
+      (fn [this messages to]
+        {
+         :value (apply m/add (map :value messages))
+         :repr (if (== 1 (count messages)) (:repr (first messages)) (cons '∏ (map :repr messages)))
+         })
+      `<>
+      (fn [this messages to to-msg parent-msg]
+        (>< this messages to))
+      `i (fn [{id :id}] {:value 0 :repr id})
+      })))
 
 (defn normalize-vals [m]
   (into {}
@@ -243,7 +236,7 @@
 
 (defn compute-marginals [exp]
   (normalize-vals
-    (unnormalized-marginals (propagate (exp->fg :sp exp)))))
+    (unnormalized-marginals (propagate (exp->fg :sp :tensor exp)))))
 
 (defn update-variables [{nodes :nodes :as graph} post priors data]
   (reductions
@@ -254,7 +247,7 @@
               g  (update-factors g p1)
             ]
         [g (normalize-vals (unnormalized-marginals (propagate g)))]))
-    [graph (or post (zipmap (keys priors) (map (fn [id] {:cpm (mapv P (:value (i (nodes id))))}) (vals priors))))] data))
+    [graph (or post (zipmap (keys priors) (map (fn [id] {:cpm (m/emap  P (:value (i (nodes id))))}) (vals priors))))] data))
 
 (defn updated-variables [{:keys [fg updated marginals priors data] :as model}]
   (let [[g m]
