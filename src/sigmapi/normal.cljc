@@ -198,14 +198,14 @@
        {:value (with-meta (fn identity [x] (em/by-rows [1])) {:mu 0 :sigma 1 :sigma-1 1}) :repr id})})))
 
 (defmethod make-node [:sp :factor :normal]
-  ([{:keys [graph id mu sigma dfn] :as params}]
+  ([{:keys [graph id mu sigma dim-for-node] :as params}]
    (let [f ((if (number? mu) normal multivariate-normal) mu sigma)
          s1 (:sigma-1 (meta f))
          d  (if (number? s1) 0 (em/num-cols s1))
          zv (em/make-zero 1 d)
          zm (em/make-zero d)
          node
-         (with-meta {:f f :id id :dim-for-node dfn :kind :factor :features #{:passes}
+         (with-meta {:f f :id id :dim-for-node dim-for-node :kind :factor :features #{:passes}
                      :zero-vector zv :zero-matrix zm :d d}
            { ; sp/Messaging
             `><
@@ -227,14 +227,14 @@
             })] node)))
 
 (defmethod make-node [:map :factor :normal]
-  ([{:keys [graph id clm cpm dfn] :as params}]
+  ([{:keys [graph id clm cpm dim-for-node] :as params}]
    (let [f (apply (if (number? (first cpm)) normal multivariate-normal) cpm)
          s1 (:sigma-1 (meta f))
          d  (if (number? s1) 0 (em/num-cols s1))
          zv (em/make-zero 1 d)
          zm (em/make-zero d)
          node
-         (with-meta {:f f :id id :dim-for-node dfn :kind :factor :features #{:passes}
+         (with-meta {:f f :id id :dim-for-node dim-for-node :kind :factor :features #{:passes}
                      :zero-vector zv :zero-matrix zm :d d}
            { ; sp/Messaging
             `><
@@ -411,7 +411,7 @@
                    (m/mmul
                      (scale-matrix [1.9 2.3 4.3])
                      ;(scale-matrix [0.5 0.5 0.5])
-                     (rotation-matrix [-0.4 -0.65 0.2])
+                     (rotation-matrix [-0.3 -0.65 0.2])
                      ) 0 3 0 3))
               }
              (:v [:pv {:mu 0.5 :sigma 1}])
