@@ -167,7 +167,6 @@
 (defn update-factors
   "Update the given nodes"
   ([{g :graph alg :alg nodes :nodes :as model} updates]
-   (println ">" updates)
    (reduce
      (fn [model [id params]]
        (update-in model [:nodes id] updated params))

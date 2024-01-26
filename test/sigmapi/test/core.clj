@@ -293,16 +293,15 @@
         (:d [:pd {:cpm [0.5 0.5]}]
           [:h|d
            {:cpm [
-             [0.6 0.5 0.4]
-             [0.4 0.5 0.6]
-             ]}
-           (:h [:ph {:cpm [1/3 1/3 1/3]}])
+                  [0.5 0.4 0.1]
+                  [0.5 0.6 0.9]
+                  ]}
+           (:h [:ph {:cpm [0.4 0.4 0.2]}])
            ]))
       :priors
       {:h :ph :d :pd}}
-     experiment
-     (assoc model :data (repeat 8 {:pd {:cpm [1 0]}}))
-     {h :h} (-> experiment spt/updated-variables :marginals)
+     experiment (assoc model :data (repeat 2 {:pd {:cpm [0 1]}}))
+     {{h :cpm} :h} (-> experiment spt/updated-variables :marginals)
      expected [0.2463 0.3547 0.3990]
      result (map (fn [hv ev] [hv ev (e= 10e-5 hv ev)]) h expected)
      ]
@@ -314,11 +313,11 @@
           [:r|t
            {:cpm [
              [1/2 1/2 0]
-             [0 2/3 1/3]
-             [1/3 1/3 1/3]
+             [0 1/3 2/3]
+             [1/3 0 2/3]
              ]}
-           (:r [:pr {:cpm [1/6 2/3 1/6]}])]
-          [:pt {:cpm [1/3 1/3 1/3]}]))
+           (:r)]
+          ))
      (exp->fg :MAP :tensor)
     (propagate (comp (fn [m] (println (update-vals (:messages m) keys)) m) message-passing))
     ;:end

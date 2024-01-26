@@ -188,9 +188,9 @@
       `p (fn [this x] (m/emap P x))})))
 
 (defmethod make-node [:sp :factor :tensor]
-  ([node]
+  ([{:keys [clm cpm] :as node}]
    (with-meta (-> node
-                (assoc :kind :factor)
+                (assoc :f (or clm (m/emap ln- cpm)) :kind :factor)
                 (update :features conj :passes))
      {; Messaging
        `><
@@ -236,7 +236,7 @@
   (into {}
     (map
       (juxt key
-        (comp (fn [v] (if (== 1 (m/dimensionality v)) (normalize v) (mapv normalize v))) val)) m)))
+        (comp (fn [v] {:cpm (if (== 1 (m/dimensionality v)) (normalize v) (mapv normalize v))}) val)) m)))
 
 (def marginals
   (comp normalize-vals unnormalized-marginals))
@@ -245,17 +245,16 @@
   (normalize-vals
     (unnormalized-marginals (propagate (exp->fg :sp exp)))))
 
-(defn update-variables [graph post priors data]
+(defn update-variables [{nodes :nodes :as graph} post priors data]
   (reductions
     (fn [[g post] data-priors]
-      (println ":" post)
       (let [
               p2 (select-keys post (keys priors))
               p1 (merge (zipmap (vals priors) (map p2 (keys priors))) data-priors)
               g  (update-factors g p1)
             ]
         [g (normalize-vals (unnormalized-marginals (propagate g)))]))
-    [graph (or post (zipmap (keys priors) (map (comp (partial mapv P) :value i (:nodes graph)) (vals priors))))] data))
+    [graph (or post (zipmap (keys priors) (map (fn [id] {:cpm (mapv P (:value (i (nodes id))))}) (vals priors))))] data))
 
 (defn updated-variables [{:keys [fg updated marginals priors data] :as model}]
   (let [[g m]
