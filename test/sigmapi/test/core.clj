@@ -5,14 +5,17 @@
     [clojure.math :as maths :refer [pow exp PI sqrt log ceil floor round]]
     [sigmapi.core :as sp :refer :all]
     [sigmapi.tensor :as spt :refer [random-matrix combine]]
+    [sigmapi.normal :refer [scale-matrix rotation-matrix]]
     [clojure.core.matrix :as m]
     [kixi.stats.distribution :as xd]
     [kixi.stats.core :as xc]
-    [com.hypirion.clj-xchart :as ch]
+    [com.hypirion.clj-xchart :as ch :refer [view xy-chart]]
     [loom.graph :as lg]
     [loom.alg :as la]
     [loom.io :as lio]
-    [emmy.env :as e]))
+    [emmy.env :as e])
+  (:import
+    [java.awt Color]))
 
 (defn e= [e x y] (< (Math/abs (- x y)) e))
 
@@ -261,16 +264,6 @@
       :model l}
      )))
 
-
-
-(defn normal
-  [scale mean sd]
-  (fn [x]
-    (* scale
-      (exp
-        (* -1
-          (/ (pow (- x mean) 2)
-             (* 2 (pow sd 2))))))))
 
 
 (comment
@@ -944,5 +937,81 @@
  (apply e/+ )
 
 (ns-unmap 'sigmapi.normal 'log2)
+
+  (print-cause-trace *e)
+
+  (let
+    [model
+       {:fg
+        (fgtree
+          (:s0 [:ps0 {:mu 0.5 :sigma 2}]
+            [:s1|s0&v
+             {:mu [0.76 0.36 0.55]
+              :sigma
+              (m/to-nested-vectors
+                  (m/submatrix
+                   (m/mmul
+                     (scale-matrix [1.2 0.27 0.77])
+                     (scale-matrix [0.3 0.3 0.3])
+                     (rotation-matrix [2.0 0.1 -0.69])
+                     ) 0 3 0 3))
+              }
+             (:v [:pv {:mu 0.5 :sigma 1}])
+             (:s1)]))
+        :priors {:v :pv :s0 :ps0}
+        :impl :normal}
+     ]
+  (->>
+    (reductions
+      (fn update-it [{{s :s1} :marginals :as m} {pv :pv :as data}]
+        (let [p {:mu (or (:mu (meta s)) 0.5) :sigma (or (:sigma (meta s)) 4)}]
+          (println " >" p)
+          (update-priors (assoc m :data (assoc data :ps0 p)))))
+      model
+      (concat
+        (repeat 16 {:pv {:mu 1 :sigma 0.1}})
+        (repeat 16 {:pv {:mu 0 :sigma 0.1}})
+        ;(repeat 4 {:pv [0 0.1]})
+         ;(repeat 4 {:pv [1 0.1]})
+         ))
+      (map (comp :s1 :marginals))
+      rest
+    ;(map (fn [f] (map (juxt identity f) (range 0 1.25 0.25))))
+      ((fn [sfs]
+         (let [n (count sfs) n1 (/ 1 n)]
+           (view
+            (xy-chart
+              (map-indexed
+                (fn [i f]
+                  [(str i)
+                   {:x (range 0 1 0.01)
+                    :y (map f (range 0 1 0.01))
+                    :style {:line-color (Color. ^float (float (* n1 i)) (float 0.0) ^float (float (- 1.0 (* n1 i))) 0.5)
+                            :marker-type :none
+                            :line-style :solid}}]) sfs)
+              {:title "-"
+               :x-axis {:title "specificity"}
+               :y-axis {:title "p" :decimal-pattern "##.##"}
+               :theme :matlab})))))
+      ))
+
+  ; this factorization can't express dependence between v and s0
+'(:s0 [:ps0 {:mu 0.5 :sigma 2}]
+            [:s1|s0
+             {:mu [0.5 0.5]
+              :sigma
+               [[1 0.7]
+                [0.7 1]
+                ]
+              }
+             (:s1
+               [:v|s1
+                 {:mu [0.1 0.1]
+                  :sigma
+                  [[1 0.99]
+                   [0.99 1]
+                ]
+                  }
+                 (:v [:pv {:mu 0.5 :sigma 1}])])])
 
   )
