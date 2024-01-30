@@ -5,7 +5,7 @@
     [clojure.math :as maths :refer [pow exp PI sqrt log ceil floor round]]
     [sigmapi.core :as sp :refer :all]
     [sigmapi.tensor :as spt :refer [random-matrix combine]]
-    [sigmapi.normal :refer [scale-matrix rotation-matrix multivariate-normal]]
+    [sigmapi.normal :refer [scale-matrix rotation-matrix multivariate-normal normal]]
     [clojure.core.matrix :as m]
     [kixi.stats.distribution :as xd]
     [kixi.stats.core :as xc]
@@ -927,7 +927,7 @@
 
   (map (fn [x] ((e/log (normal 1 0 1)) x)) (range -2 2 0.1))
 
-  ((e/log (normal 1 0 1)) x)
+  ((e/log (normal 0 1)) 8)
 
   (e/simplify (e/log (normal 1 0 1)))
 
@@ -966,7 +966,7 @@
      m0 (fgtree
           (:s0 [:ps0 {:mu 0.5 :sigma 4}]
             [:v0|s0
-             {:mu [0.5 0.5]
+             {:mu [1 0]
               :sigma
               [[1 0.99]
                [0.99 1]
@@ -980,10 +980,10 @@
                 ]}
                (:s1 [:ps1 {:mu 0.5 :sigma 4}]
                  [:v1|s1
-                  {:mu [0.5 0.5]
+                  {:mu [1 0]
                    :sigma
-                   [[1 0.7]
-                    [0.7 1]
+                   [[1 0.99]
+                    [0.99 1]
                     ]
                    }
                   (:v1 [:pv1 {:mu 0.5 :sigma 4}])]
@@ -1013,8 +1013,8 @@
         (fn [[{pv1 :pv1} pm]] (assoc pm :pv0 pv1))
         (partition 2 1
           (concat
-           (repeat 16 {:pv1 {:mu 1 :sigma 0.1}})
-           (repeat 16 {:pv1 {:mu 0 :sigma 0.1}})
+           (repeat 8 {:pv1 {:mu 1 :sigma 1}})
+           (repeat 8 {:pv1 {:mu -1 :sigma 1}})
            ;(repeat 4 {:pv [0 0.1]})
            ;(repeat 4 {:pv [1 0.1]})
            ))))
@@ -1039,9 +1039,9 @@
                :theme :matlab})))))
       ))
 
-  (let [mu [0 0]
-        sigma [[1 0.8]
-               [0.8 1]]
+  (let [mu [1 0]
+        sigma [[1 0.99]
+               [0.99 3]]
         f (multivariate-normal mu sigma)
         fn2d (fn [v s'] (f [v s']))
         ;ms (summarize mu sigma 2)
