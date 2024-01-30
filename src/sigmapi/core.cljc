@@ -472,7 +472,7 @@
              {nodes :nodes :as graph} (or updated (exp->fg :sp impl fg))
               post (or marginals (zipmap (keys priors) (map (comp :value i nodes) (map (fn [v] (if (keyword? v) v (last v))) (vals priors)))))
               p2 (select-keys post (keys priors))
-              p1 (merge (zipmap (map (fn [v] (if (keyword? v) v (first v))) (vals priors)) (map (comp (juxt :mu :sigma) meta p2) (keys priors))) data)
+              p1 (merge (zipmap (map (fn [v] (if (keyword? v) v (first v))) (vals priors)) (map (comp meta p2) (keys priors))) data)
               g (update-factors graph p1)
             ]
         (-> model

@@ -5,7 +5,7 @@
     [clojure.math :as maths :refer [pow exp PI sqrt log ceil floor round]]
     [sigmapi.core :as sp :refer :all]
     [sigmapi.tensor :as spt :refer [random-matrix combine]]
-    [sigmapi.normal :refer [scale-matrix rotation-matrix]]
+    [sigmapi.normal :refer [scale-matrix rotation-matrix multivariate-normal]]
     [clojure.core.matrix :as m]
     [kixi.stats.distribution :as xd]
     [kixi.stats.core :as xc]
@@ -13,9 +13,16 @@
     [loom.graph :as lg]
     [loom.alg :as la]
     [loom.io :as lio]
-    [emmy.env :as e])
+    [emmy.env :as e]
+    [cljplot.render :as pr]
+    [cljplot.build :as pb]
+    [clojure2d.color :as pc]
+    [cljplot.core :refer [save show]]
+    )
   (:import
     [java.awt Color]))
+
+
 
 (defn e= [e x y] (< (Math/abs (- x y)) e))
 
@@ -941,40 +948,77 @@
   (print-cause-trace *e)
 
   (let
-    [model
-       {:fg
-        (fgtree
+    [m1 (fgtree
           (:s0 [:ps0 {:mu 0.5 :sigma 2}]
             [:s1|s0&v
-             {:mu [0.76 0.36 0.55]
+             {:mu [0.5 0.5 0.5]
               :sigma
               (m/to-nested-vectors
                   (m/submatrix
                    (m/mmul
-                     (scale-matrix [1.2 0.27 0.77])
+                     (scale-matrix [2.5 0.63 0.39])
                      (scale-matrix [0.3 0.3 0.3])
-                     (rotation-matrix [2.0 0.1 -0.69])
+                     (rotation-matrix [6.3 0.04 -0.67])
                      ) 0 3 0 3))
               }
              (:v [:pv {:mu 0.5 :sigma 1}])
              (:s1)]))
-        :priors {:v :pv :s0 :ps0}
+     m0 (fgtree
+          (:s0 [:ps0 {:mu 0.5 :sigma 4}]
+            [:v0|s0
+             {:mu [0.5 0.5]
+              :sigma
+              [[1 0.9]
+               [0.9 1]
+               ]}
+             (:v0 [:pv0 {:mu 0.5 :sigma 1}])]
+            [:s1|s0
+              {:mu [0.4 0.6]
+               :sigma
+               [[1 0.5]
+                [0.5 1]
+                ]}
+               (:s1 [:ps1 {:mu 0.5 :sigma 4}]
+                 [:v1|s1
+                  {:mu [0.5 0.5]
+                   :sigma
+                   [[1 0.99]
+                    [0.99 1]
+                    ]
+                   }
+                  (:v1 [:pv1 {:mu 0.5 :sigma 1}])]
+                 [:s2|s1
+                  {:mu [0.4 0.6]
+                   :sigma
+                   [[1 0.8]
+                    [0.8 1]
+                    ]
+                   }
+                  (:s2)])]))
+
+     model
+       {:fg m0
+        :priors {:v1 :pv1 :v0 :pv0 :s0 :ps0 :s1 :ps1}
         :impl :normal}
      ]
   (->>
     (reductions
-      (fn update-it [{{s :s1} :marginals :as m} {pv :pv :as data}]
-        (let [p {:mu (or (:mu (meta s)) 0.5) :sigma (or (:sigma (meta s)) 4)}]
-          (println " >" p)
-          (update-priors (assoc m :data (assoc data :ps0 p)))))
+      (fn update-it [{{s2 :s2 s1 :s1 :as ms} :marginals :as m} {pv1 :pv1 :as data}]
+        (let [ps2 {:mu (or (:mu (meta s2)) 0.5) :sigma (or (:sigma (meta s2)) 4)}
+              ps1 {:mu (or (:mu (meta s1)) 0.5) :sigma (or (:sigma (meta s1)) 4)}]
+          (println " >" ps1 ps2)
+          (update-priors (assoc m :data (assoc data :ps1 ps2 :ps0 ps1)))))
       model
-      (concat
-        (repeat 16 {:pv {:mu 1 :sigma 0.1}})
-        (repeat 16 {:pv {:mu 0 :sigma 0.1}})
-        ;(repeat 4 {:pv [0 0.1]})
-         ;(repeat 4 {:pv [1 0.1]})
-         ))
-      (map (comp :s1 :marginals))
+      (map
+        (fn [[{pv1 :pv1} pm]] (assoc pm :pv0 pv1))
+        (partition 2 1
+          (concat
+           (repeat 16 {:pv1 {:mu 1 :sigma 0.1}})
+           (repeat 16 {:pv1 {:mu 0 :sigma 0.1}})
+           ;(repeat 4 {:pv [0 0.1]})
+           ;(repeat 4 {:pv [1 0.1]})
+           ))))
+      (map (comp :s2 :marginals))
       rest
     ;(map (fn [f] (map (juxt identity f) (range 0 1.25 0.25))))
       ((fn [sfs]
@@ -995,23 +1039,21 @@
                :theme :matlab})))))
       ))
 
-  ; this factorization can't express dependence between v and s0
-'(:s0 [:ps0 {:mu 0.5 :sigma 2}]
-            [:s1|s0
-             {:mu [0.5 0.5]
-              :sigma
-               [[1 0.7]
-                [0.7 1]
-                ]
-              }
-             (:s1
-               [:v|s1
-                 {:mu [0.1 0.1]
-                  :sigma
-                  [[1 0.99]
-                   [0.99 1]
-                ]
-                  }
-                 (:v [:pv {:mu 0.5 :sigma 1}])])])
+  (let [mu [0 0]
+        sigma [[1 0.8]
+               [0.8 1]]
+        f (multivariate-normal mu sigma)
+        fn2d (fn [v s'] (f [v s']))
+        ;ms (summarize mu sigma 2)
+        ]
+    (-> (pb/series [:function-2d fn2d {:x [-2 2] :y [-2 2]}])
+     (pb/preprocess-series)
+     (pb/add-axes :bottom)
+     (pb/add-axes :left)
+     (pb/add-label :bottom "2d function")
+     (pr/render-lattice {:width 512 :height 512})
+     (save "results/examples/function2d.jpg")
+     (show)))
+
 
   )

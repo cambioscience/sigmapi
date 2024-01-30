@@ -222,7 +222,7 @@
                  {:value f :repr id :dim-for-node dim-for-node})
             ; Updatable
             `updated
-              (fn [this {:keys [mu sigma]}]
+              (fn [this {:keys [mu sigma] :as p}]
                 (assoc this :f ((if (number? mu) normal multivariate-normal) mu sigma)))
             })] node)))
 
@@ -230,13 +230,13 @@
   ([{:keys [graph id clm cpm dim-for-node] :as params}]
    (let [f (apply (if (number? (first cpm)) normal multivariate-normal) cpm)
          s1 (:sigma-1 (meta f))
-         d  (if (number? s1) 0 (em/num-cols s1))
+         d (if (number? s1) 0 (em/num-cols s1))
          zv (em/make-zero 1 d)
          zm (em/make-zero d)
          node
          (with-meta {:f f :id id :dim-for-node dim-for-node :kind :factor :features #{:passes}
                      :zero-vector zv :zero-matrix zm :d d}
-           { ; sp/Messaging
+           {; sp/Messaging
             `><
             (fn [{:keys [f id dim-for-node zero-vector zero-matrix d] :as this} messages to]
               (let [to-dim (dim-for-node to)
