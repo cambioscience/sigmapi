@@ -5,7 +5,7 @@
     [clojure.math :as maths :refer [pow exp PI sqrt log ceil floor round]]
     [sigmapi.core :as sp :refer :all]
     [sigmapi.impl.core-matrix :as spt :refer [random-matrix combine P]]
-    [sigmapi.impl.normal :refer [scale-matrix rotation-matrix multivariate-normal normal]]
+    [sigmapi.impl.normal :as spn :refer [scale-matrix rotation-matrix multivariate-normal normal]]
     [clojure.core.matrix :as m]
     [kixi.stats.distribution :as xd]
     [kixi.stats.core :as xc]
@@ -1010,7 +1010,7 @@
         (let [ps2 {:mu (or (:mu (meta s2)) 0.5) :sigma (or (:sigma (meta s2)) 4)}
               ps1 {:mu (or (:mu (meta s1)) 0.5) :sigma (or (:sigma (meta s1)) 4)}]
           (println " >" ps1 ps2)
-          (update-priors (assoc m :data (assoc data :ps1 ps2 :ps0 ps1)))))
+          (spn/update-priors (assoc m :data (assoc data :ps1 ps2 :ps0 ps1)))))
       model
       (map
         (fn [[{pv1 :pv1} pm]] (assoc pm :pv0 pv1))

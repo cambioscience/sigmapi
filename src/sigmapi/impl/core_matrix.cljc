@@ -186,7 +186,26 @@
       `i (fn [this] {:value 0 :repr 0})
      })))
 
-(defmethod make-node [:sp :factor :core.matrix/tensor]
+(defrecord SPFT [id dim-for-node kind f features]
+  Messaging
+  (>< [{:keys [f id dim-for-node] :as this} messages to]
+    (let [
+          prod (combine f m/add messages to dim-for-node)
+          sum (m/emap ln- (map m/esum (m/emap P prod)))
+          ]
+      {
+       :value sum
+       :repr (cons '∑ (list (cons '∏ (list (:repr (i this)) (if (== 1 (count messages)) (:repr (first messages)) (map :repr messages))))))
+       }))
+  (<> [this messages to to-msg parent-msg]
+    (>< this messages to))
+  (i [{:keys [f id dim-for-node]}]
+    {:value f :repr id :dim-for-node dim-for-node})
+  Updatable
+  (updated [this {:keys [clm cpm value] :as p}]
+    (assoc this :f (or clm (m/emap ln- (or cpm value))))))
+
+(defmethod make-node [:sp :factor :core.matrix/tensor1]
   ([{:keys [clm cpm value] :as node}]
    (with-meta (-> node
                 (assoc :f (or clm (m/emap ln- (or cpm value))) :kind :factor)
@@ -209,8 +228,14 @@
        (fn [{:keys [f id dim-for-node]}]
          {:value f :repr id :dim-for-node dim-for-node})
       `updated
-        (fn [this {:keys [cpm value] :as p}]
+        (fn [this {:keys [clm cpm value] :as p}]
           (assoc this :f (or clm (m/emap ln- (or cpm value)))))})))
+
+(defmethod make-node [:sp :factor :core.matrix/tensor]
+  ([{:keys [id dim-for-node features clm cpm value] :as node}]
+   (SPFT. id dim-for-node :factor
+     (or clm (m/emap ln- (or cpm value)))
+     (conj features :passes))))
 
 (defmethod make-node [:sp :variable :core.matrix/tensor]
   ([node]
