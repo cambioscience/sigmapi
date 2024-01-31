@@ -1,4 +1,4 @@
-(ns sigmapi.normal
+(ns sigmapi.impl.normal
   (:require
     [clojure.stacktrace :refer [print-cause-trace]]
     [clojure.math :as maths :refer [PI]]
@@ -174,7 +174,9 @@
     https://statproofbook.github.io/P/mvn-marg.html
   "
   ([mu sigma to-dim]
-    (normal (em/get-in mu [0 to-dim]) (em/get-in sigma [to-dim to-dim]))))
+    (normal
+      (em/get-in mu [0 to-dim])
+      (em/get-in sigma [to-dim to-dim]))))
 
 (defmethod make-node [:sp :variable :normal]
   ([{:keys [id] :as node}]
@@ -308,7 +310,20 @@
         {:value (with-meta (fn identity [x] (em/by-rows [1])) {:mu 0 :sigma 1 :sigma-1 1}) :repr id})})))
 
 
-
+(defn update-priors
+  [{:keys [fg impl updated marginals priors data] :as model}]
+      (let [
+             {nodes :nodes :as graph} (or updated (exp->fg :sp impl fg))
+              post (or marginals (zipmap (keys priors) (map (comp :value i nodes) (map (fn [v] (if (keyword? v) v (last v))) (vals priors)))))
+              p2 (select-keys post (keys priors))
+              p1 (merge (zipmap (map (fn [v] (if (keyword? v) v (first v))) (vals priors)) (map (fn [k] (or (meta (p2 k)) (p2 k))) (keys priors))) data)
+              g (update-factors graph p1)
+            ]
+        (-> model
+          (assoc :updated g)
+          (assoc :marginals (unnormalized-marginals (propagate g)))
+          ;(assoc :marginals (normalize-vals (unnormalized-marginals  (propagate g))))
+          )))
 
 (comment
 

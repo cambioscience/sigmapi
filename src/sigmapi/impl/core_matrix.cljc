@@ -1,4 +1,4 @@
-(ns sigmapi.tensor
+(ns sigmapi.impl.core-matrix
   (:require
     [clojure.core.matrix :as m]
     [clojure.set :as set]
@@ -14,13 +14,16 @@
 
 (defn P [x] (pow 2 (* -1 x)))
 
-(defn normalize
+(defn p-normalize
   ([p]
-    (normalize p (reduce + p)))
+    (p-normalize p (reduce + p)))
   ([p s]
    (if (zero? s)
     p
      (mapv (partial * (/ 1 s)) p))))
+
+(defn log-normalize
+  ([l] (p-normalize (map P l))))
 
 (defn random-matrix
   "Returns a random matrix of the given shape e.g.  [2 3 4 5]"
@@ -106,10 +109,10 @@
     tm))
 
 
-(defmethod make-node [:MAP :factor :tensor]
-  ([{:keys [clm cpm] :as node}]
+(defmethod make-node [:MAP :factor :core.matrix/tensor]
+  ([{:keys [clm cpm value] :as node}]
    (let [node (-> node
-                (assoc :f (or clm (m/emap ln- cpm)) :kind :factor)
+                (assoc :f (or clm (m/emap ln- (or cpm value))) :kind :factor)
                 (update :features conj :passes))]
      (with-meta node
        {
@@ -144,13 +147,13 @@
              }))
         `i (fn [{:keys [f id dim-for-node] :as this}] {:value f :repr id :dim-for-node dim-for-node})
         `updated
-          (fn [this {:keys [cpm clm]}]
-            (assoc this :f (or clm (m/emap ln- cpm))))}))))
+          (fn [this {:keys [cpm clm value]}]
+            (assoc this :f (or clm (m/emap ln- (or cpm value)))))}))))
 
-(defmethod make-node [:MAP :variable :tensor]
+(defmethod make-node [:MAP :variable :core.matrix/tensor]
   ([{:keys [id] :as node}]
-  (with-meta (assoc node :kind :variable)
-    {; Messaging
+   (with-meta (assoc node :kind :variable)
+     {; Messaging
       `><
       (fn [this messages to]
         (let [sum (apply m/add (map :value messages))]
@@ -183,7 +186,7 @@
       `i (fn [this] {:value 0 :repr 0})
      })))
 
-(defmethod make-node [:sp :factor :tensor]
+(defmethod make-node [:sp :factor :core.matrix/tensor]
   ([{:keys [clm cpm value] :as node}]
    (with-meta (-> node
                 (assoc :f (or clm (m/emap ln- (or cpm value))) :kind :factor)
@@ -209,7 +212,7 @@
         (fn [this {:keys [cpm value] :as p}]
           (assoc this :f (or clm (m/emap ln- (or cpm value)))))})))
 
-(defmethod make-node [:sp :variable :tensor]
+(defmethod make-node [:sp :variable :core.matrix/tensor]
   ([node]
    (with-meta (assoc node :kind :variable)
      {; Messaging
@@ -226,17 +229,16 @@
       })))
 
 (defn normalize-vals [m]
-  (into {}
-    (map
-      (juxt key
-        (comp (fn [v] {:cpm (if (== 1 (m/dimensionality v)) (normalize v) (mapv normalize v))}) val)) m)))
+  (update-vals m
+    (fn [v]
+      (if (== 1 (m/dimensionality v)) (log-normalize v) (mapv log-normalize v)))))
 
 (def marginals
   (comp normalize-vals unnormalized-marginals))
 
 (defn compute-marginals [exp]
   (normalize-vals
-    (unnormalized-marginals (propagate (exp->fg :sp :tensor exp)))))
+    (unnormalized-marginals (propagate (exp->fg :sp :core.matrix/tensor exp)))))
 
 (defn update-variables [{nodes :nodes :as graph} post priors data]
   (reductions
@@ -253,7 +255,21 @@
   (let [[g m]
           (last
            (update-variables
-             (or updated (exp->fg :sp :tensor fg)) marginals priors data))]
+             (or updated (exp->fg :sp :core.matrix/tensor fg)) marginals priors data))]
     (-> model
       (assoc :marginals m)
       (assoc :updated g))))
+
+(defn update-priors
+  [{:keys [fg impl updated marginals priors data] :as model}]
+      (let [
+             {nodes :nodes :as graph} (or updated (exp->fg :sp impl fg))
+              post (or marginals (zipmap (keys priors) (map (comp :value i nodes) (map (fn [v] (if (keyword? v) v (last v))) (vals priors)))))
+              p2 (select-keys post (keys priors))
+              p1 (merge (zipmap (map (fn [v] (if (keyword? v) v (first v))) (vals priors)) (map p2 (keys priors))) data)
+              g (update-factors graph p1)
+            ]
+        (-> model
+          (assoc :updated g)
+          (assoc :marginals (normalize-vals (unnormalized-marginals  (propagate g))))
+          )))

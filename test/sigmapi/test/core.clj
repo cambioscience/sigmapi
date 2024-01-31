@@ -4,8 +4,8 @@
     [clojure.test :refer [deftest testing is]]
     [clojure.math :as maths :refer [pow exp PI sqrt log ceil floor round]]
     [sigmapi.core :as sp :refer :all]
-    [sigmapi.tensor :as spt :refer [random-matrix combine]]
-    [sigmapi.normal :refer [scale-matrix rotation-matrix multivariate-normal normal]]
+    [sigmapi.impl.core-matrix :as spt :refer [random-matrix combine P]]
+    [sigmapi.impl.normal :refer [scale-matrix rotation-matrix multivariate-normal normal]]
     [clojure.core.matrix :as m]
     [kixi.stats.distribution :as xd]
     [kixi.stats.core :as xc]
@@ -262,13 +262,17 @@
       door (or dp (assoc [0 0 0] door-number 1))
       choice (or cp (assoc [0 0 0] choose-door-number 1))
       {m1 :marginals l :updated :as em0}
-      (-> model (assoc :data {:p-door door :p-door-0 door :p-door-1 door :p-your-1st-choice choice :p-your-1st-choice-0 choice}) sp/update-priors)
+      (-> model
+        (assoc
+          :impl :core.matrix/tensor
+          :data {:p-door door :p-door-0 door :p-door-1 door :p-your-1st-choice choice :p-your-1st-choice-0 choice})
+         spt/update-priors)
       m2
-      (-> l (assoc :alg :sp/mxp) sp/change-alg propagate MAP-config)
+      (-> l (assoc :alg :MAP :impl :core.matrix/tensor) sp/change-alg propagate MAP-config)
       ]
 
      {:result (if (== 1 (:prize-1 m2)) '🚗 '🐐)
-      :model l}
+      :model l :config m2 :marginals m1}
      )))
 
 
@@ -276,7 +280,7 @@
 (comment
 
 
-  (:result (MHP {:correct-door (rand-int 3) :choose-door (rand-int 3)}))
+  (:config (MHP {:correct-door (rand-int 3) :choose-door (rand-int 3)}))
 
   (frequencies
     (repeatedly 100
@@ -319,7 +323,7 @@
              ]}
            (:r)]
           ))
-     (exp->fg :MAP :tensor)
+     (exp->fg :MAP :core.matrix/tensor)
     (propagate (comp (fn [m] (println (update-vals (:messages m) keys)) m) message-passing))
     ;:end
     ;:messages
@@ -907,17 +911,16 @@
         (fn [{{p :dp} :marginals :as m} {d :pd :as data}]
           (let [e (min 1 (max 0 (int (ceil (dec (reduce + (map (comp abs -) d p)))))))
                 pe (assoc [0 0] e 1)]
-            (update-priors
-             (assoc m :data (assoc data :pe pe)))))
+            (spt/update-priors (assoc m :impl :core.matrix/tensor :data (assoc data :pe pe)))))
         model
         (->> [{:pd [1/2 1/2]}]
           (into (interleave (repeat 8 {:pd [1 0]}) (repeat 8 {:pd [0 1]})))
           (into (repeat 8 {:pd [0 1]}))))
-      (map (juxt :marginals :data))
+      (map :marginals)
       ))
 
 
-
+(print-cause-trace *e)
 
   ((e/D e/square) 'x)
 
@@ -943,7 +946,7 @@
 
  (apply e/+ )
 
-(ns-unmap 'sigmapi.normal 'log2)
+(ns-unmap 'sigmapi.impl.normal 'log2)
 
   (print-cause-trace *e)
 

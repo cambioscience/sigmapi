@@ -69,7 +69,7 @@
     messages into one.
   ")
 
-(defprotocol Messaging :extend-via-metadata true
+(defprotocol Messaging
   "
 
     Messaging
@@ -85,13 +85,15 @@
     messages always excludes the destination node
 
 
-  "
+  " :extend-via-metadata true
   (>< [this messages to])
   (<> [this messages to to-msg parent])
   (i [this]))
 
-(defprotocol Updatable :extend-via-metadata true
-  (updated [this x]))
+(defprotocol Updatable
+  "return an updated version of this"
+  :extend-via-metadata true
+  (updated [this an-update]))
 
 (defmulti make-node (fn ([p] (mapv p (:make-with p)))))
 
@@ -139,10 +141,10 @@
              (map
                (fn [id]
                  [id
-                  (let [params' (get-in nodes [id :params])
-                        params (if (map? params') params' {:value params'})]
-                     (if params'
-                        (make-node (assoc params
+                  (let [params (get-in nodes [id :params])
+                        params' (if (map? params) params {:value params})]
+                     (if params
+                        (make-node (assoc params'
                                      :alg alg
                                      :features #{}
                                      :make-with [:alg :kind :impl]
@@ -153,7 +155,7 @@
                                     :features #{}
                                     :make-with [:alg :kind :impl]
                                     :kind :variable :impl impl :id id})))])
-               (lg/nodes g)))})))
+                 (lg/nodes g)))})))
 
 (defn graph->fg [alg {:keys [nodes edges] :as graph}]
   (let [nodes' (into {} (concat
@@ -168,7 +170,7 @@
   ([{g :graph alg :alg nodes :nodes :as model} updates]
    (reduce
      (fn [model [id params]]
-       (update-in model [:nodes id] updated params))
+       (update-in model [:nodes id] updated (if (map? params) params {:value params})))
      model updates)))
 
 (defn change-alg
@@ -465,18 +467,3 @@
     (map
       (fn [[id sequence]] [id (= sequence (get config id))])
       sequence-by-id)))
-
-(defn update-priors
-  [{:keys [fg impl updated marginals priors data] :as model}]
-      (let [
-             {nodes :nodes :as graph} (or updated (exp->fg :sp impl fg))
-              post (or marginals (zipmap (keys priors) (map (comp :value i nodes) (map (fn [v] (if (keyword? v) v (last v))) (vals priors)))))
-              p2 (select-keys post (keys priors))
-              p1 (merge (zipmap (map (fn [v] (if (keyword? v) v (first v))) (vals priors)) (map (comp meta p2) (keys priors))) data)
-              g (update-factors graph p1)
-            ]
-        (-> model
-          (assoc :updated g)
-          (assoc :marginals (unnormalized-marginals (propagate g)))
-          ;(assoc :marginals (normalize-vals (unnormalized-marginals  (propagate g))))
-          )))
