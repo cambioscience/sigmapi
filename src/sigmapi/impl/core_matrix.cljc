@@ -205,7 +205,7 @@
   (updated [this {:keys [clm cpm value] :as p}]
     (assoc this :f (or clm (m/emap ln- (or cpm value))))))
 
-(defmethod make-node [:sp :factor :core.matrix/tensor1]
+(defmethod make-node [:sp :factor :core.matrix/tensor]
   ([{:keys [clm cpm value] :as node}]
    (with-meta (-> node
                 (assoc :f (or clm (m/emap ln- (or cpm value))) :kind :factor)
@@ -231,7 +231,7 @@
         (fn [this {:keys [clm cpm value] :as p}]
           (assoc this :f (or clm (m/emap ln- (or cpm value)))))})))
 
-(defmethod make-node [:sp :factor :core.matrix/tensor]
+(defmethod make-node [:sp :factor :core.matrix/tensor1]
   ([{:keys [id dim-for-node features clm cpm value] :as node}]
    (SPFT. id dim-for-node :factor
      (or clm (m/emap ln- (or cpm value)))

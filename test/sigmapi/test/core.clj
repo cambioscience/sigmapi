@@ -14,6 +14,7 @@
     [loom.alg :as la]
     [loom.io :as lio]
     [emmy.env :as e]
+    [criterium.core :as cc]
     [cljplot.render :as pr]
     [cljplot.build :as pb]
     [clojure2d.color :as pc]
@@ -881,6 +882,7 @@
 
   (test-Bayesian-updating)
 
+  (cc/quick-bench (test-Bayesian-updating))
 
   (let
     [model
@@ -1046,6 +1048,19 @@
         sigma [[1 0.99]
                [0.99 3]]
         f (multivariate-normal mu sigma)
+        fn2d (fn [v s'] (f [v s']))
+        ;ms (summarize mu sigma 2)
+        ]
+    (-> (pb/series [:function-2d fn2d {:x [-2 2] :y [-2 2]}])
+     (pb/preprocess-series)
+     (pb/add-axes :bottom)
+     (pb/add-axes :left)
+     (pb/add-label :bottom "2d function")
+     (pr/render-lattice {:width 512 :height 512})
+     (save "results/examples/function2d.jpg")
+     (show)))
+
+  (let [d (xd/sample 64 (xd/dirichlet {:alphas [1 1 1]}))
         fn2d (fn [v s'] (f [v s']))
         ;ms (summarize mu sigma 2)
         ]
