@@ -20,12 +20,5 @@
       kixi/stats {:mvn/version "0.5.5"}
       }
      }
-   :sigmapi
-   {
-    :extra-deps
-    {
-     obrizum/sigmapi {:git/url "https://github.com/cambioscience/sigmapi.git" :sha "dadaead75c73157e756512191b78fd926dc97791"}
-     }
-    }
    }
  }
