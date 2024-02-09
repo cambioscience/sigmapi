@@ -9,7 +9,7 @@
  :aliases
   {
     :test {:extra-paths ["test"]
-           :extra-deps {net.mikera/vectorz-clj    {:mvn/version "0.48.0"}}}
+           :extra-deps {net.mikera/vectorz-clj {:mvn/version "0.48.0"}}}
     :stats
     {
      :extra-deps

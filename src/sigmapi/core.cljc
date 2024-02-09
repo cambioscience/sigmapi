@@ -38,7 +38,6 @@
         "}
   sigmapi.core
   (:require
-    [clojure.core.matrix :as m]
     [clojure.set :as set]
     [clojure.math :as maths :refer [log pow]]
     [clojure.walk :as walk]
@@ -118,9 +117,8 @@
 
 (defn edges->fg
   "
-  TODO: need to check shape of graph and
-  dimensionality of matrices
-
+    Make a factor graph from these edges for this
+    algorithm and implementation
   "
   ([alg impl edges]
       (let [g (apply lg/graph (map (partial map :id) edges))
@@ -210,10 +208,11 @@
   (edges->fg alg impl (as-edges exp)))
 
 (defn prior-nodes [{:keys [graph nodes] :as model}]
-  (into {} (map (fn [id] [id (nodes id)]) (filter
-                                    (fn [n]
-                                      (and (leaf? graph n) (= :factor (:kind (nodes n)))))
-                                    (lg/nodes graph)))))
+  (into {}
+    (filter
+      (fn [[id node]]
+        (and (leaf? graph id) (= :factor (:kind node)))))
+    nodes))
 
 (defn msgs-from-leaves [{:keys [messages graph nodes leaves] :as model}]
   (reduce
