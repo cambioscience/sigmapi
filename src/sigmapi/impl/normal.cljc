@@ -1,12 +1,12 @@
 (ns sigmapi.impl.normal
   (:require
-    [clojure.stacktrace :refer [print-cause-trace]]
-    [clojure.math :as maths :refer [PI]]
+    #?(:clj [clojure.stacktrace :refer [print-cause-trace]])
+    [clojure.math :as maths :refer [PI cos sin]]
     [clojure.core.matrix :as m]
-    [kixi.stats.distribution :as xd]
-    [emmy.env :as e :refer :all]
+    [emmy.env :as e :refer [+ - * sqrt expt exp log]]
     [emmy.matrix :as em]
-    [sigmapi.core :as sp :refer :all]))
+    [sigmapi.core :as sp :refer
+      [exp->fg make-node update-factors unnormalized-marginals propagate updated >< <> i]]))
 
 (defn mup [mat rs cs f]
   (m/set-selection mat rs cs
@@ -300,7 +300,7 @@
                 mto (get-in to-msg [:im conf 1])
                 ]
               {
-               :value sum
+               ;:value sum
                :min maxv
                :configuration (assoc configuration to mto)
                :repr (cons '∑ (map :repr messages))

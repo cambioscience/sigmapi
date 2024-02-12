@@ -3,7 +3,8 @@
     [clojure.core.matrix :as m]
     [clojure.set :as set]
     [clojure.math :as maths :refer [log pow]]
-    [sigmapi.core :refer :all]))
+    [sigmapi.core :refer
+      [exp->fg make-node update-factors unnormalized-marginals propagate updated Messaging Updatable >< <> i]]))
 
 
 (def log2 (log 2))
