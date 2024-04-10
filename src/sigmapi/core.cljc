@@ -1,8 +1,8 @@
 (ns ^{:doc
       " 𝝨𝝥
 
-        Implementations of the sum-product and max-sum
-        algorithms, from Factor Graphs and the Sum-Product Algorithm
+        Implementations of the sum-product and max-sum algorithms,
+        from Factor Graphs and the Sum-Product Algorithm
         Frank R. Kschischang, Senior Member, IEEE, Brendan J. Frey, Member, IEEE, and
         Hans-Andrea Loeliger, Member, IEEE
         IEEE TRANSACTIONS ON INFORMATION THEORY, VOL. 47, NO. 2, FEBRUARY 2001
@@ -54,19 +54,6 @@
          `(~(if (vector? x) `vector `list) ~@x)
          x))
      xp)))
-
-
-(comment
-  "
-    Protocols
-    There are 2 types of node in a factor graph: Variable and Factor
-    There are several algorithms that can be run on a factor graph,
-    each of which causes different kinds of messages to be exchanged.
-    The only constant is the messaging itself, and that each node must
-    have product and identity functions. Product doesn't mean
-    multiplication necessarily, it just means the ability to combine
-    messages into one.
-  ")
 
 (defprotocol Messaging
   "

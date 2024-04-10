@@ -8,93 +8,7 @@
     [sigmapi.core :as sp :refer
       [exp->fg make-node update-factors unnormalized-marginals propagate updated >< <> i]]))
 
-(defn mup [mat rs cs f]
-  (m/set-selection mat rs cs
-    (f (m/select mat rs cs))))
-
-(defn qr
-  "
-    QR decomposition by Householder reflection
-
-    adapted from Matlab implementation by @tobydriscoll
-    returns Q the eigenvectors and R
-    the diagonal of which is the eigenvalues
-    Qd = I 0
-         0 F
-    F begins at column d, row d
-    F is a n-d dimensional vector space
-    in which a hyperplane H reflects z
-    to the vector |z|e1
-    v = |z|e1 - z
-    Fy = (I - 2(vv'/v'v))y
-    which is an orthonormal projector
-  "
-  ([a]
-   (qr (m/identity-matrix (first (m/shape a))) (m/shape a) a))
-  ([I [m n] A]
-    (loop [d 0 R A Q I]
-      (if (< d n)
-        (let [[z1 :as z] (m/select R (range d m) d)
-              v (m/matrix
-                  (cons
-                    (- (* -1.0 (Math/signum (double z1)) (m/magnitude z)) z1)
-                    (m/mul -1.0 (m/select z :rest))))
-              Qd (mup I (range d m) (range d n)
-                    (fn Fy [i] (m/sub i (m/mul 2.0 (m/div (m/outer-product v v)
-                                                          (m/inner-product v v))))))]
-          (recur (inc d) (m/mmul Qd R) (m/mmul Q Qd)))
-        {:A A
-         :Q Q
-         :R R
-         :A=QR (m/mmul Q R)
-         :eigenvectors (m/mul -1 (m/transpose Q))
-         :eigenvalues (m/mul -1 (m/diagonal R))
-         }))))
-
-(defn rotation-matrix
-  "make a (column-based) rotation matrix from these angles"
-  [[x y z]]
-  (->
-    [
-       (* (cos x) (cos y))
-       (* (sin x) (cos y))
-       (* -1.0 (sin y)) 0
-
-       (- (* (* (cos x) (sin y)) (sin z)) (* (sin x) (cos z)))
-       (+ (* (* (sin x) (sin y)) (sin z)) (* (cos x) (cos z)))
-       (* (cos y) (sin z)) 0
-
-       (+ (* (* (cos x) (sin y)) (cos z)) (* (sin x) (sin z)))
-       (- (* (* (sin x) (sin y)) (cos z)) (* (cos x) (sin z)))
-       (* (cos y) (cos z)) 0
-
-       0 0 0 1
-    ]
-    (m/reshape [4 4])))
-
-(defn scale-matrix [[x y z]]
-  (m/matrix
-    [
-     [x 0 0 0]
-     [0 y 0 0]
-     [0 0 z 0]
-     [0 0 0 1]
-     ]))
-
-(defn translation-matrix [[x y z]]
-  (m/matrix
-    [
-     [1 0 0 x]
-     [0 1 0 y]
-     [0 0 1 z]
-     [0 0 0 1]
-     ]))
-
 (def shape (juxt em/num-rows em/num-cols))
-
-(defn broadcast [f]
-  (fn [[x & xs :as tx]]
-    (f x)))
 
 (defn normal [mu sd]
   (with-meta
@@ -244,8 +158,7 @@
               (let [to-dim (dim-for-node to)
                     {:keys [mu sigma]} (product-of-normals (assoc this :to-dim to-dim :messages messages))
                     ]
-                {
-                 :dim-for-node dim-for-node
+                {:dim-for-node dim-for-node
                  :sum mu
                  :value 1
                  :min (apply max-key first (map vector mu (range)))
@@ -258,8 +171,7 @@
                           mind (zipmap (map :id messages) (range (count messages)))
                           to-conf (get conf to)
                           ]
-                     {
-                      :dim-for-node dim-for-node
+                     {:dim-for-node dim-for-node
                       :value 0
                       :mind mind
                       :conf conf
@@ -321,9 +233,7 @@
             ]
         (-> model
           (assoc :updated g)
-          (assoc :marginals (unnormalized-marginals (propagate g)))
-          ;(assoc :marginals (normalize-vals (unnormalized-marginals  (propagate g))))
-          )))
+          (assoc :marginals (unnormalized-marginals (propagate g))))))
 
 (comment
 

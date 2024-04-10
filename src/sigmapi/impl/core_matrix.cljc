@@ -111,9 +111,9 @@
 
 
 (defmethod make-node [:MAP :factor :core.matrix/tensor]
-  ([{:keys [clm cpm value] :as node}]
+  ([{:keys [f clm cpm value] :as node}]
    (let [node (-> node
-                (assoc :f (or clm (m/emap ln- (or cpm value))) :kind :factor)
+                (assoc :f (or f clm (m/emap ln- (or cpm value))) :kind :factor)
                 (update :features conj :passes))]
      (with-meta node
        {
@@ -207,9 +207,9 @@
     (assoc this :f (or clm (m/emap ln- (or cpm value))))))
 
 (defmethod make-node [:sp :factor :core.matrix/tensor]
-  ([{:keys [clm cpm value] :as node}]
+  ([{:keys [f clm cpm value] :as node}]
    (with-meta (-> node
-                (assoc :f (or clm (m/emap ln- (or cpm value))) :kind :factor)
+                (assoc :f (or f clm (m/emap ln- (or cpm value))) :kind :factor)
                 (update :features conj :passes))
      {; Messaging
        `><
