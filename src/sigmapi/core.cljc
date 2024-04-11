@@ -8,7 +8,7 @@
         IEEE TRANSACTIONS ON INFORMATION THEORY, VOL. 47, NO. 2, FEBRUARY 2001
         DOI: 10.1109/18.910572
 
-        Also, Pattern Recognition and Machine Learning,
+        Also Pattern Recognition and Machine Learning,
         Christopher M. Bishop, was invaluable
        "
       :author "Matthew Chadwick"
