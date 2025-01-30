@@ -2,6 +2,7 @@
  :paths ["src"]
  :deps
  {
+   com.taoensso/timbre      {:mvn/version "5.2.1"}
    org.clojure/clojure      {:mvn/version "1.11.1"}
    aysylu/loom              {:mvn/version "1.0.2"}
    net.mikera/core.matrix   {:mvn/version "0.63.0"}

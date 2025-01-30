@@ -44,14 +44,15 @@
 
   "
   (:require
-    [clojure.core.matrix :as m]
-    [clojure.set :as set]
-    [clojure.math :as maths :refer [log pow]]
-    [clojure.walk :as walk]
-    [loom.graph :as lg]
-    [loom.alg :as la])
-    #?(:cljs (:require-macros
-              [sigmapi.core :refer [fgtree]])))
+   [clojure.core.matrix :as m]
+   [clojure.set :as set]
+   [clojure.math :as maths :refer [log pow]]
+   [clojure.walk :as walk]
+   [taoensso.timbre :as log]
+   [loom.graph :as lg]
+   [loom.alg :as la])
+  #?(:cljs (:require-macros
+            [sigmapi.core :refer [fgtree]])))
 
 #?(:clj
   (defmacro fgtree [xp]
@@ -404,21 +405,74 @@ max-sum algorithm with the given id")
   (let [nodes' (into {} (concat
                           (map (fn [id] [id {:id (keyword (str id))}]) (remove nodes edges))
                           (map (fn [[id matrix]] [id {:id (keyword (str id)) :matrix matrix}]) nodes)))
-        edges'  (partition 2 (map nodes' edges))
+        edges' (partition 2 (map nodes' edges))
         ]
     (edges->fg alg edges')))
+
+(defn maybe-fix-matrices-coherence
+  "Factor Graph matrices types:
+  - `ps` topics dim, values [0.0-1.0], there are as many as topics;
+  - `ps'` topics dim, values `0` or `1`, there are as many as topics;
+  - `pc` topics dim, values `0` or `1`, only the one;
+  - `pv` dim 2, values `0` or `1`, there are as many as topics."
+  [matrices]
+  (let [cardinalities (fn [pred col] (mapv (comp count second) (remove (comp pred first) col)))
+        ;; Which keys have nil values?
+        nil-keys (seq (map first (filter (fn [[_k v]] (nil? v)) matrices)))
+        ;; Filter those that have to have cardinality = num topics (`:ps*` and `:ps'*`)
+        ps-nils (seq (filter #(re-find #"ps" (name %)) nil-keys))
+        ;; Classify by key type
+        keys-by-type (group-by (fn [[k _]]
+                                 (condp re-find (name k)
+                                   #"ps[0-9]+"  :ps
+                                   #"ps'[0-9]+" :ps'
+                                   #"pv[0-9]+"  :pv
+                                   :pc))
+                       (sort-by (comp name first) (seq matrices)))
+        ;; Non nil `:ps*` contents
+        ps-card (cardinalities (set nil-keys) (:ps keys-by-type))
+        ;; Non nil `:ps'*` contents
+        ps'-card (cardinalities (set nil-keys) (:ps' keys-by-type))
+        ;; Non nil `:pv*` contents
+        pv-card (cardinalities (set nil-keys) (:pv keys-by-type))
+        ;; Combined topic cardinality matrices coherence
+        ps*-cards (concat ps-card ps'-card)
+        ;; If all not-nil ps* matrices have the same cardinality then we can fix the nil ones
+        existing-mat-cohesion? (apply = ps*-cards)
+        ;; If there is cohesion any cardinality is the number of topics
+        perhaps-num-topics (first ps*-cards)
+        ;; Status summary
+        _ (log/debug "[OBR-5573 - Sigmapi re-contextualisation with more topics hack] =>"
+                     (cond-> {:ps-keys-count (count (:ps keys-by-type))
+                              :ps-keys-cohesion ps-card
+                              :pv-keys-count (count (:pv keys-by-type))
+                              :pv-keys-cohesion pv-card
+                              :ps'-keys-count (count (:ps' keys-by-type))
+                              :ps'-keys-cohesion ps'-card
+                              :pc-keys-count (count (:pc keys-by-type))}
+                       nil-keys               (assoc :nils nil-keys)
+                       existing-mat-cohesion? (assoc
+                                                :topic-num perhaps-num-topics
+                                                :attempting-fix? true)
+                       (not= (set nil-keys) (set ps-nils)) (assoc :all-nil-keys-fixed? false)))]
+    (if existing-mat-cohesion?
+      ;; If there is cohesion on the non-nil keys we can try to fix the nil ones.
+      (into matrices (for [mat ps-nils]
+                       ;; The summ of all values in one matrix should be `1`, thus 1 value will be `1`
+                       [mat (into [1] (repeat (dec perhaps-num-topics) 0))]))
+      matrices)))
 
 (defn update-factors
   "Replace nodes for the given matrices with new ones"
   ([model matrices]
-    (update-factors model matrices :cpm))
+   (update-factors model matrices :cpm))
   ([{g :graph alg :alg nodes :nodes :as model} matrices cmkey]
-    (reduce
+   (reduce
      (fn [model [id mat]]
        (let [n (nodes id) {dfn :dim-for-node} (i n)]
          (assoc-in model [:nodes id]
            (make-node {:alg alg :type :sp/factor :graph g :id id cmkey (m/matrix mat) :dfn dfn}))))
-     model matrices)))
+     model (maybe-fix-matrices-coherence matrices))))
 
 (defn change-alg
   "
