@@ -453,9 +453,9 @@ max-sum algorithm with the given id")
                        nil-keys               (assoc :nils nil-keys)
                        existing-mat-cohesion? (assoc
                                                 :topic-num perhaps-num-topics
-                                                :attempting-fix? true)
+                                                :attempting-fix? (boolean (seq ps-nils)))
                        (not= (set nil-keys) (set ps-nils)) (assoc :all-nil-keys-fixed? false)))]
-    (if existing-mat-cohesion?
+    (if (and (seq ps-nils) existing-mat-cohesion?)
       ;; If there is cohesion on the non-nil keys we can try to fix the nil ones.
       (into matrices (for [mat ps-nils]
                        ;; The summ of all values in one matrix should be `1`, thus 1 value will be `1`
